@@ -1,7 +1,8 @@
 import sqlite3
+from database import DB_NAME
 
 def initialize_database():
-    conn = sqlite3.connect("chess_app.db")
+    conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     
     cursor.execute("""
@@ -14,7 +15,7 @@ def initialize_database():
     
     # Insert a test user
     cursor.execute("""
-                   INSERT INTO users (username, password)
+                   INSERT OR IGNORE INTO users (username, password)
                    VALUES (?, ?)
                    """, ("testuser", "testpassword"))
     
