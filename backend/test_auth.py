@@ -1,15 +1,15 @@
 from auth import AuthService
 
-def main():
-    auth_service = AuthService()
-    
-    username = input("Enter username: ")
-    password = input("Enter password: ")
-    
-    if auth_service.authenticate(username, password):
-        print("Login successful")
-    else:
-        print("Invalid username or password")
-        
 if __name__ == "__main__":
-    main()
+    auth_service = AuthService()
+
+    username = input("Enter username: ").strip()
+    password = input("Enter password: ").strip()
+
+    result = auth_service.authenticate(username, password)
+
+    if result["success"]:
+        print("Authentication successful")
+        print(result["user"])
+    else:
+        print(f"Authentication failed: {result['message']}")

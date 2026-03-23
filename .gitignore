@@ -1,8 +1,9 @@
 # Python
+.venv/
 venv/
-backend/venv/
 __pycache__/
 *.pyc
+chess_app.db
 
 # Database
 *.db
@@ -15,3 +16,4 @@ dist/
 
 # Env files
 .env
+
