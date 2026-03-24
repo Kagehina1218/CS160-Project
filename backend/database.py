@@ -10,46 +10,49 @@ class DbConnection:
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_name)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
         return conn
 
-    def get_user_by_username(self, username: str) -> Optional[dict[str, Any]]:
+    def get_profile_by_clerk_user_id(self, clerk_user_id: str) -> Optional[dict[str, Any]]:
         conn = self._connect()
         cursor = conn.cursor()
 
         cursor.execute("""
-            SELECT id, username, email, password_hash, created_at, last_login
-            FROM users
-            WHERE username = ?
-        """, (username,))
-
-        row = cursor.fetchone()
-        conn.close()
-        return dict(row) if row else None
-
-    def get_profile_by_user_id(self, user_id: int) -> Optional[dict[str, Any]]:
-        conn = self._connect()
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT id, user_id, display_name, bio, rating, wins, losses, games_played
+            SELECT id, clerk_user_id, email, display_name, bio, rating, wins, losses, games_played, created_at
             FROM profiles
-            WHERE user_id = ?
-        """, (user_id,))
+            WHERE clerk_user_id = ?
+        """, (clerk_user_id,))
 
         row = cursor.fetchone()
         conn.close()
         return dict(row) if row else None
 
-    def update_last_login(self, user_id: int) -> None:
+    def create_profile_if_missing(
+        self,
+        clerk_user_id: str,
+        email: Optional[str],
+        display_name: Optional[str],
+    ) -> dict[str, Any]:
+        existing = self.get_profile_by_clerk_user_id(clerk_user_id)
+        if existing:
+            return existing
+
         conn = self._connect()
         cursor = conn.cursor()
 
         cursor.execute("""
-            UPDATE users
-            SET last_login = CURRENT_TIMESTAMP
-            WHERE id = ?
-        """, (user_id,))
+            INSERT INTO profiles (clerk_user_id, email, display_name, bio)
+            VALUES (?, ?, ?, ?)
+        """, (
+            clerk_user_id,
+            email,
+            display_name,
+            "New Clerk user",
+        ))
 
         conn.commit()
         conn.close()
+
+        profile = self.get_profile_by_clerk_user_id(clerk_user_id)
+        if profile is None:
+            raise ValueError("Failed to create profile")
+        return profile

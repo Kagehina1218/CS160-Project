@@ -1,45 +1,43 @@
-from flask import Flask, request, jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 
-from auth import AuthService
+from clerk_auth import extract_bearer_token, verify_clerk_token
 from database import DbConnection
 
 app = Flask(__name__)
 CORS(app)
 
-auth_service = AuthService()
 db = DbConnection()
 
 
-@app.route("/login", methods=["POST"])
-def login():
-    data = request.get_json(silent=True)
-
-    if not data:
-        return jsonify({"message": "Missing JSON body"}), 400
-
-    username = data.get("username", "").strip()
-    password = data.get("password", "").strip()
-
-    if not username or not password:
-        return jsonify({"message": "Username and password are required"}), 400
-
-    result = auth_service.authenticate(username, password)
-
-    if not result["success"]:
-        return jsonify({"message": result["message"]}), 401
-
-    return jsonify(result), 200
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({"status": "ok"}), 200
 
 
-@app.route("/profile/<int:user_id>", methods=["GET"])
-def get_profile(user_id: int):
-    profile = db.get_profile_by_user_id(user_id)
+@app.route("/profile", methods=["GET"])
+def get_profile():
+    try:
+        token = extract_bearer_token(request)
+        claims = verify_clerk_token(token)
 
-    if not profile:
-        return jsonify({"message": "Profile not found"}), 404
+        clerk_user_id = claims.get("sub")
+        if not clerk_user_id:
+            return jsonify({"message": "Missing Clerk user id"}), 401
 
-    return jsonify(profile), 200
+        email = claims.get("email")
+        display_name = claims.get("name") or claims.get("given_name")
+
+        profile = db.create_profile_if_missing(
+            clerk_user_id=clerk_user_id,
+            email=email,
+            display_name=display_name,
+        )
+
+        return jsonify({"profile": profile}), 200
+
+    except Exception as exc:
+        return jsonify({"message": str(exc)}), 401
 
 
 if __name__ == "__main__":

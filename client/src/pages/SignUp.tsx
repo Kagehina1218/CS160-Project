@@ -1,7 +1,8 @@
-import { SignIn } from "@clerk/react";
+import { SignUp } from "@clerk/react";
 
-export default function Login() {
+export default function SignUpPage() {
   return (
+    
     <div className="auth-page">
       <div className="auth-header">
   <div className="logo">♟</div>
@@ -10,13 +11,12 @@ export default function Login() {
     Play smarter. Compete harder.
   </p>
 </div>
-      {/* CENTER LOGIN */}
       <div className="auth-centered">
         <div className="auth-card clerk-card">
-          <SignIn
-            path="/sign-in"
+          <SignUp
+            path="/sign-up"
             routing="path"
-            signUpUrl="/sign-up"
+            signInUrl="/sign-in"
             fallbackRedirectUrl="/menu"
             appearance={{
               elements: {
@@ -30,24 +30,23 @@ export default function Login() {
         </div>
       </div>
 
-      {/* SMALL FEATURE BOXES BELOW */}
       <div className="auth-features-grid">
         <div className="mini-feature">
-          <span>🔐</span>
-          <h4>Secure</h4>
-          <p>Google & email login</p>
+          <span>🎯</span>
+          <h4>Easy</h4>
+          <p>Create account fast</p>
         </div>
 
         <div className="mini-feature">
-          <span>⚡</span>
-          <h4>Fast</h4>
-          <p>Instant access</p>
+          <span>🧩</span>
+          <h4>Profile</h4>
+          <p>Auto created</p>
         </div>
 
         <div className="mini-feature">
-          <span>♜</span>
-          <h4>RogueChess</h4>
-          <p>Connected backend</p>
+          <span>🌈</span>
+          <h4>Clear UI</h4>
+          <p>Simple navigation</p>
         </div>
       </div>
     </div>
