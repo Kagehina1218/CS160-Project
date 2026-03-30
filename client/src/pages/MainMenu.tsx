@@ -13,6 +13,17 @@ type Profile = {
   games_played: number;
 };
 
+type LeaderboardEntry = {
+  rank: number;
+  name: string;
+  rating: number;
+  wins: number;
+  losses: number;
+  games_played: number;
+  is_ai: boolean;
+  is_current_user: boolean;
+};
+
 type MenuCardProps = {
   title: string;
   description: string;
@@ -34,11 +45,12 @@ export default function MainMenu() {
   const { getToken, isLoaded: authLoaded } = useAuth();
 
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [error, setError] = useState<string>("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const loadProfile = async () => {
+    const loadData = async () => {
       if (!authLoaded || !userLoaded) return;
 
       try {
@@ -51,34 +63,43 @@ export default function MainMenu() {
           throw new Error("No Clerk token found");
         }
 
-        const res = await fetch("/api/profile", {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
+        const [profileRes, leaderboardRes] = await Promise.all([
+          fetch("/api/profile", {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }),
+          fetch("/api/leaderboard", {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }),
+        ]);
 
-        const text = await res.text();
-        let data: { message?: string; profile?: Profile } = {};
+        const profileText = await profileRes.text();
+        const leaderboardText = await leaderboardRes.text();
 
-        try {
-          data = text ? JSON.parse(text) : {};
-        } catch {
-          throw new Error("Backend returned invalid JSON");
+        const profileData = profileText ? JSON.parse(profileText) : {};
+        const leaderboardData = leaderboardText ? JSON.parse(leaderboardText) : {};
+
+        if (!profileRes.ok) {
+          throw new Error(profileData.message || "Failed to load profile");
         }
 
-        if (!res.ok) {
-          throw new Error(data.message || "Failed to load profile");
+        if (!leaderboardRes.ok) {
+          throw new Error(leaderboardData.message || "Failed to load leaderboard");
         }
 
-        setProfile(data.profile ?? null);
+        setProfile(profileData.profile ?? null);
+        setLeaderboard(leaderboardData.leaderboard ?? []);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load profile");
+        setError(err instanceof Error ? err.message : "Failed to load data");
       } finally {
         setLoading(false);
       }
     };
 
-    void loadProfile();
+    void loadData();
   }, [authLoaded, userLoaded, getToken]);
 
   const handleComingSoon = (feature: string) => {
@@ -113,6 +134,40 @@ export default function MainMenu() {
           <div className="stat-chip">Wins: {profile?.wins ?? 0}</div>
           <div className="stat-chip">Losses: {profile?.losses ?? 0}</div>
           <div className="stat-chip">Games: {profile?.games_played ?? 0}</div>
+        </div>
+
+        <div className="leaderboard-section">
+          <div className="leaderboard-header">
+            <h2>Leaderboard</h2>
+            <p>See how you rank against AI opponents.</p>
+          </div>
+
+          <div className="leaderboard-table">
+            <div className="leaderboard-row leaderboard-head">
+              <span>Rank</span>
+              <span>Player</span>
+              <span>Rating</span>
+              <span>W-L</span>
+              <span>Games</span>
+            </div>
+
+            {leaderboard.map((entry) => (
+              <div
+                key={`${entry.name}-${entry.rank}`}
+                className={`leaderboard-row ${entry.is_current_user ? "current-user-row" : ""}`}
+              >
+                <span>#{entry.rank}</span>
+                <span>
+                  {entry.name} {entry.is_ai ? "🤖" : "👤"}
+                </span>
+                <span>{entry.rating}</span>
+                <span>
+                  {entry.wins}-{entry.losses}
+                </span>
+                <span>{entry.games_played}</span>
+              </div>
+            ))}
+          </div>
         </div>
 
         <div className="menu-grid">

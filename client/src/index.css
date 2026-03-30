@@ -625,3 +625,66 @@ body {
 .clerk-inner-card span {
   color: #cbd5e1 !important;
 }
+
+.leaderboard-section {
+  margin: 28px 0 32px;
+  padding: 22px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(129, 140, 248, 0.16);
+}
+
+.leaderboard-header {
+  margin-bottom: 16px;
+}
+
+.leaderboard-header h2 {
+  margin: 0 0 6px 0;
+  color: #f8fafc;
+  font-size: 1.4rem;
+}
+
+.leaderboard-header p {
+  margin: 0;
+  color: #94a3b8;
+}
+
+.leaderboard-table {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.leaderboard-row {
+  display: grid;
+  grid-template-columns: 0.8fr 2fr 1fr 1fr 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: rgba(2, 6, 23, 0.55);
+  color: #e2e8f0;
+}
+
+.leaderboard-head {
+  background: rgba(99, 102, 241, 0.16);
+  font-weight: 700;
+  color: #c7d2fe;
+}
+
+.current-user-row {
+  border: 1px solid rgba(236, 72, 153, 0.55);
+  background: linear-gradient(
+    135deg,
+    rgba(99, 102, 241, 0.16),
+    rgba(236, 72, 153, 0.12)
+  );
+  box-shadow: 0 8px 24px rgba(236, 72, 153, 0.12);
+}
+
+@media (max-width: 768px) {
+  .leaderboard-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+}
