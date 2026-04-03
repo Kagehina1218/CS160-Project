@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { UserButton, useAuth, useUser } from "@clerk/react";
 
 type Profile = {
@@ -43,6 +44,7 @@ function MenuCard({ title, description, onClick }: MenuCardProps) {
 export default function MainMenu() {
   const { user, isLoaded: userLoaded } = useUser();
   const { getToken, isLoaded: authLoaded } = useAuth();
+  const navigate = useNavigate();
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
@@ -190,6 +192,11 @@ export default function MainMenu() {
             title="Profile"
             description="Track progress, wins, streaks, and saved data."
             onClick={() => handleComingSoon("Profile")}
+          />
+          <MenuCard
+            title="Discussion Board"
+            description="Read and post difficulty-based strategy messages."
+            onClick={() => navigate("/discussion")}
           />
         </div>
       </div>

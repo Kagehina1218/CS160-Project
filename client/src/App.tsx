@@ -3,6 +3,7 @@ import { useAuth } from "@clerk/react";
 import Login from "./pages/Login";
 import SignUpPage from "./pages/SignUp";
 import MainMenu from "./pages/MainMenu";
+import DiscussionBoard from "./pages/DiscussionBoard";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isLoaded, isSignedIn } = useAuth();
@@ -31,6 +32,14 @@ export default function App() {
             <MainMenu />
           </ProtectedRoute>
         }
+      />
+      <Route
+      path="/discussion"
+      element={
+        <ProtectedRoute>
+          <DiscussionBoard />
+        </ProtectedRoute>
+      }
       />
     </Routes>
   );
