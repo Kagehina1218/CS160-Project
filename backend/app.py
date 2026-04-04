@@ -1,14 +1,17 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
-from clerk_auth import extract_bearer_token, verify_clerk_token
-from database import DbConnection
+from backend.clerk_auth import extract_bearer_token, verify_clerk_token
+from backend.database import DbConnection
+
+import chess
 
 app = Flask(__name__)
 CORS(app)
 
 db = DbConnection()
 
+board = chess.Board()
 
 @app.route("/health", methods=["GET"])
 def health():
@@ -81,6 +84,42 @@ def get_games():
 
     except Exception as exc:
         return jsonify({"message": str(exc)}), 401
+    
+@app.route("/board", methods=["GET"])
+def get_board():
+    return jsonify({
+        "fen": board.fen(),
+        "turn": "white" if board.turn else "black",
+        "is_checkmate": board.is_checkmate()
+    })
+
+@app.route("/move", methods=["POST"])
+def make_move():
+    data = request.get_json()
+    move = data.get("move")
+
+    try:
+        chess_move = chess.Move.from_uci(move)
+        if chess_move in board.legal_moves:
+            captured = board.is_capture(chess_move)
+            board.push(chess_move)
+
+            return jsonify({
+                "status": "ok",
+                "fen": board.fen(),
+                "turn": "white" if board.turn else "black",
+                "capture": captured,
+                "is_checkmate": board.is_checkmate()
+            })
+        else:
+            return jsonify({"status": "illegal"})
+    except:
+        return jsonify({"status": "error"})
+
+@app.route("/reset", methods=["POST"])
+def reset():
+    board.reset()
+    return jsonify({"fen": board.fen()})
 
 if __name__ == "__main__":
     app.run(debug=True)
