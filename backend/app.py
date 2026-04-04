@@ -4,7 +4,14 @@ from flask_cors import CORS
 from backend.clerk_auth import extract_bearer_token, verify_clerk_token
 from backend.database import DbConnection
 
+import os
+import json
 import chess
+from datetime import datetime
+
+MESSAGES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "messages")
+VALID_DIFFICULTIES = {"easy", "medium", "hard"}
+
 
 app = Flask(__name__)
 CORS(app)
@@ -84,6 +91,90 @@ def get_games():
 
     except Exception as exc:
         return jsonify({"message": str(exc)}), 401
+    
+@app.route("/messages/<difficulty>", methods=["GET"])
+def get_messages(difficulty):
+    try:
+        token = extract_bearer_token(request)
+        verify_clerk_token(token)
+        
+        messages = load_messages(difficulty)
+        return jsonify({"messages": messages}), 200
+    
+    except ValueError as exc:
+        return jsonify({"message": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"message": str(exc)}), 401
+    
+@app.route("/messages/<difficulty>", methods=["POST"])
+def post_message(difficulty):
+    try:
+        token = extract_bearer_token(request)
+        claims = verify_clerk_token(token)
+
+        data = request.get_json()
+        if not data:
+            return jsonify({"message": "Invalid JSON body"}), 400
+        
+        message_text = (data.get("message") or "").strip()
+        if not message_text:
+            return jsonify({"message": "Message cannot be empty"}), 400 
+        if len(message_text) > 300:
+            return jsonify({"message": "Message too long (must be under 300 characters)"}), 400
+        
+        profile = db.create_profile_if_missing(
+            clerk_user_id=claims.get("sub"),
+            email=claims.get("email"),
+            display_name=claims.get("name") or claims.get("given_name"),
+        )
+        
+        messages = load_messages(difficulty)
+        
+        new_message = {
+            "id": len(messages) + 1,
+            "username": profile.get("display_name") or "Player",
+            "clerk_user_id": claims.get("sub"),
+            "message": message_text,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        
+        messages.append(new_message)
+        save_messages(difficulty, messages)
+        
+        return jsonify({
+            "message": "Message posted successfully",
+            "posted_message": new_message,
+            "messages": messages
+        }), 201
+    
+    except ValueError as exc:
+        return jsonify({"message": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"message": str(exc)}), 401
+    
+def get_messages_file_path(difficulty: str) -> str:
+    if difficulty not in VALID_DIFFICULTIES:
+        raise ValueError("Invalid difficulty")
+
+    os.makedirs(MESSAGES_DIR, exist_ok=True)
+    return os.path.join(MESSAGES_DIR, f"{difficulty}.json")
+    
+def load_messages(difficulty: str):
+    file_path = get_messages_file_path(difficulty)
+    
+    if not os.path.exists(file_path):
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump([], f)
+
+    with open(file_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def save_messages(difficulty: str, messages):
+    file_path = get_messages_file_path(difficulty)
+    
+    with open(file_path, "w", encoding="utf-8") as f:
+        json.dump(messages, f, indent=2)
+
     
 @app.route("/board", methods=["GET"])
 def get_board():
