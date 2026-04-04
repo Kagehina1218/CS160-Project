@@ -4,6 +4,7 @@ import Login from "./pages/Login";
 import SignUpPage from "./pages/SignUp";
 import MainMenu from "./pages/MainMenu";
 import DiscussionBoard from "./pages/DiscussionBoard";
+import ChessBoard from "./pages/ChessBoard";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isLoaded, isSignedIn } = useAuth();
@@ -38,6 +39,14 @@ export default function App() {
       element={
         <ProtectedRoute>
           <DiscussionBoard />
+        </ProtectedRoute>
+      }
+      />
+      <Route
+      path="/game"
+      element={
+        <ProtectedRoute>
+          <ChessBoard />
         </ProtectedRoute>
       }
       />

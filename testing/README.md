@@ -1,0 +1,1 @@
+To run change "from clerk_auth import extract_bearer_token, verify_clerk_token" and "from database import DbConnection" to "from backend.clerk_auth import extract_bearer_token, verify_clerk_token" and "from backend.database import DbConnection"

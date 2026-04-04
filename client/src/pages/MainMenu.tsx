@@ -176,7 +176,7 @@ export default function MainMenu() {
           <MenuCard
             title="Quick Match"
             description="Start a fast game and jump right into action."
-            onClick={() => handleComingSoon("Quick Match")}
+            onClick={() => navigate("/game")}
           />
           <MenuCard
             title="Multiplayer"

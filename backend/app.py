@@ -1,8 +1,8 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
-from backend.clerk_auth import extract_bearer_token, verify_clerk_token
-from backend.database import DbConnection
+from clerk_auth import extract_bearer_token, verify_clerk_token
+from database import DbConnection
 
 import os
 import json
@@ -188,18 +188,15 @@ def get_board():
 def make_move():
     data = request.get_json()
     move = data.get("move")
-
     try:
         chess_move = chess.Move.from_uci(move)
         if chess_move in board.legal_moves:
-            captured = board.is_capture(chess_move)
             board.push(chess_move)
 
             return jsonify({
                 "status": "ok",
                 "fen": board.fen(),
                 "turn": "white" if board.turn else "black",
-                "capture": captured,
                 "is_checkmate": board.is_checkmate()
             })
         else:
