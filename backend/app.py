@@ -4,10 +4,21 @@ from flask_cors import CORS
 from clerk_auth import extract_bearer_token, verify_clerk_token
 from database import DbConnection
 
+from augments import (
+    square_coords,
+    get_piece_side,
+    is_extended_knight_move,
+    is_safe_custom_knight_move,
+    is_safe_custom_bishop_move,
+    is_safe_second_bishop_move,
+)
+
 import os
 import json
 import chess
 from datetime import datetime
+
+
 
 MESSAGES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "messages")
 VALID_DIFFICULTIES = {"easy", "medium", "hard"}
@@ -19,6 +30,38 @@ CORS(app)
 db = DbConnection()
 
 board = chess.Board()
+
+# List of active augments
+active_augments = {
+    "white": {
+        "knight_long_jump": False,
+        "bishop_phase": False,
+        "bishop_double_move": False,
+        "king_guard": False,
+        "king_bodyguard": False,
+        "random_mutation": False,
+    },
+    "black": {
+        "knight_long_jump": False,
+        "bishop_phase": False,
+        "bishop_double_move": False,
+        "king_guard": False,
+        "king_bodyguard": False,
+        "random_mutation": False,
+    },
+}
+
+# Global state tracker for bishops
+bishop_double_move_state = {
+    "active": False,
+    "side": None,
+    "bishop_square": None,
+}
+
+def clear_bishop_double_move_state():
+    bishop_double_move_state["active"] = False
+    bishop_double_move_state["side"] = None
+    bishop_double_move_state["bishop_square"] = None
 
 @app.route("/health", methods=["GET"])
 def health():
@@ -188,10 +231,135 @@ def get_board():
 def make_move():
     data = request.get_json()
     move = data.get("move")
+
     try:
         chess_move = chess.Move.from_uci(move)
-        if chess_move in board.legal_moves:
+        piece = board.piece_at(chess_move.from_square)
+
+        if not piece:
+            return jsonify({"status": "illegal", "message": "No piece selected"})
+
+        side = get_piece_side(piece)
+        side_augments = active_augments[side]
+        
+        # Forced second bishop move
+        if bishop_double_move_state["active"]:
+            required_side = bishop_double_move_state["side"]
+            required_square_name = bishop_double_move_state["bishop_square"]
+
+            # Must be same side
+            if side != required_side:
+                return jsonify({
+                    "status": "illegal",
+                    "message": "Must complete bishop second move"
+                })
+
+            # Must be same bishop
+            if chess.square_name(chess_move.from_square) != required_square_name:
+                return jsonify({
+                    "status": "illegal",
+                    "message": "Must move the same bishop again"
+                })
+
+            # Must still be a bishop
+            if piece.piece_type != chess.BISHOP:
+                return jsonify({
+                    "status": "illegal",
+                    "message": "Second move must be made by that bishop"
+                })
+
+            # Must be a valid non-capturing bishop move
+            if not is_safe_second_bishop_move(board, chess_move):
+                return jsonify({
+                    "status": "illegal",
+                    "message": "Second bishop move cannot capture"
+                })
+
+            # Complete the second move normally
             board.push(chess_move)
+
+            # Clear pending state so it does NOT loop forever
+            clear_bishop_double_move_state()
+            
+            return jsonify({
+                "status": "ok",
+                "fen": board.fen(),
+                "turn": "white" if board.turn else "black",
+                "is_checkmate": board.is_checkmate(),
+                "message": "Second bishop move completed"
+            })
+
+        # Standard legal move
+        if chess_move in board.legal_moves:
+            moving_piece_type = piece.piece_type
+
+            # Check whether this move is a capture BEFORE pushing
+            destination_piece = board.piece_at(chess_move.to_square)
+            was_capture = destination_piece is not None
+
+            board.push(chess_move)
+
+            # Bishop double move triggered
+            if (
+                side_augments["bishop_double_move"]
+                and moving_piece_type == chess.BISHOP
+                and not was_capture
+            ):
+                # Give same side one extra move
+                board.turn = not board.turn
+
+                bishop_double_move_state["active"] = True
+                bishop_double_move_state["side"] = side
+                bishop_double_move_state["bishop_square"] = chess.square_name(
+                    chess_move.to_square
+                )
+
+                return jsonify({
+                    "status": "ok",
+                    "fen": board.fen(),
+                    "turn": side,
+                    "is_checkmate": board.is_checkmate(),
+                    "message": "Bishop may move again"
+                })
+
+            # Bishop capture ends turn
+            if (
+                side_augments["bishop_double_move"]
+                and moving_piece_type == chess.BISHOP
+                and was_capture
+            ):
+                clear_bishop_double_move_state()
+
+                return jsonify({
+                    "status": "ok",
+                    "fen": board.fen(),
+                    "turn": "white" if board.turn else "black",
+                    "is_checkmate": board.is_checkmate(),
+                    "message": "Bishop capture ends turn"
+                })
+
+            # Normal move
+            clear_bishop_double_move_state()
+
+            return jsonify({
+                "status": "ok",
+                "fen": board.fen(),
+                "turn": "white" if board.turn else "black",
+                "is_checkmate": board.is_checkmate(),
+                "message": "Move completed"
+            })
+
+        # Knight augment: allow 4x1 movement
+        if (
+            side_augments["knight_long_jump"]
+            and piece.piece_type == chess.KNIGHT
+            and is_extended_knight_move(chess_move.from_square, chess_move.to_square)
+            and is_safe_custom_knight_move(board, chess_move)
+        ):
+            board.remove_piece_at(chess_move.from_square)
+            board.remove_piece_at(chess_move.to_square)
+            board.set_piece_at(chess_move.to_square, piece)
+            board.turn = not board.turn
 
             return jsonify({
                 "status": "ok",
@@ -199,10 +367,30 @@ def make_move():
                 "turn": "white" if board.turn else "black",
                 "is_checkmate": board.is_checkmate()
             })
-        else:
-            return jsonify({"status": "illegal"})
-    except:
-        return jsonify({"status": "error"})
+            
+        # Bishop augment: allow passing through exactly one piece
+        if (
+            side_augments["bishop_phase"]
+            and piece.piece_type == chess.BISHOP
+            and is_safe_custom_bishop_move(board, chess_move)
+        ):
+            board.remove_piece_at(chess_move.from_square)
+            board.remove_piece_at(chess_move.to_square)
+            board.set_piece_at(chess_move.to_square, piece)
+            board.turn = not board.turn
+
+            return jsonify({
+                "status": "ok",
+                "fen": board.fen(),
+                "turn": "white" if board.turn else "black",
+                "is_checkmate": board.is_checkmate()
+            })
+
+        return jsonify({"status": "illegal", "message": "Illegal move"})
+    
+
+    except Exception:
+        return jsonify({"status": "error", "message": "Invalid move format"})
 
 @app.route("/legal-moves/<square_name>", methods=["GET"])
 def get_legal_moves(square_name):
@@ -215,26 +403,149 @@ def get_legal_moves(square_name):
     if not piece:
         return jsonify({"status": "ok", "moves": []}), 200
 
-    # Only show moves for the side whose turn it is
+    side = get_piece_side(piece)
+
+    # Forced second bishop move
+    if bishop_double_move_state["active"]:
+        required_side = bishop_double_move_state["side"]
+        required_square_name = bishop_double_move_state["bishop_square"]
+
+        # Only the stored bishop on the stored side may move
+        if side != required_side:
+            return jsonify({"status": "ok", "moves": []}), 200
+
+        if chess.square_name(from_square) != required_square_name:
+            return jsonify({"status": "ok", "moves": []}), 200
+
+        legal_destinations = {}
+
+        for move in board.legal_moves:
+            if (
+                move.from_square == from_square
+                and piece.piece_type == chess.BISHOP
+                and board.piece_at(move.to_square) is None
+                and is_safe_second_bishop_move(board, move)
+            ):
+                to_square_name = chess.square_name(move.to_square)
+
+                legal_destinations[to_square_name] = {
+                    "square": to_square_name,
+                    "is_capture": False,
+                }
+
+        return jsonify({
+            "status": "ok",
+            "from": square_name,
+            "moves": [legal_destinations[key] for key in sorted(legal_destinations.keys())],
+        }), 200
+
+    # Normal turn restriction
     if piece.color != board.turn:
         return jsonify({"status": "ok", "moves": []}), 200
 
-    legal_destinations = []
+    side_augments = active_augments[side]
+    legal_destinations = {}
 
+    # Standard legal moves
     for move in board.legal_moves:
         if move.from_square == from_square:
-            legal_destinations.append(chess.square_name(move.to_square))
+            to_square_name = chess.square_name(move.to_square)
+            is_capture = board.piece_at(move.to_square) is not None
+
+            legal_destinations[to_square_name] = {
+                "square": to_square_name,
+                "is_capture": is_capture,
+            }
+
+    # Knight augment moves
+    if side_augments["knight_long_jump"] and piece.piece_type == chess.KNIGHT:
+        from_file, from_rank = square_coords(from_square)
+
+        candidate_offsets = [
+            (4, 1), (4, -1), (-4, 1), (-4, -1),
+            (1, 4), (1, -4), (-1, 4), (-1, -4),
+        ]
+
+        for df, dr in candidate_offsets:
+            new_file = from_file + df
+            new_rank = from_rank + dr
+
+            if 0 <= new_file < 8 and 0 <= new_rank < 8:
+                to_square = chess.square(new_file, new_rank)
+                custom_move = chess.Move(from_square, to_square)
+
+                if is_safe_custom_knight_move(board, custom_move):
+                    to_square_name = chess.square_name(to_square)
+                    is_capture = board.piece_at(to_square) is not None
+
+                    legal_destinations[to_square_name] = {
+                        "square": to_square_name,
+                        "is_capture": is_capture,
+                    }
+
+    # Bishop phase moves
+    if side_augments["bishop_phase"] and piece.piece_type == chess.BISHOP:
+        for to_square in chess.SQUARES:
+            if to_square == from_square:
+                continue
+
+            custom_move = chess.Move(from_square, to_square)
+
+            if is_safe_custom_bishop_move(board, custom_move):
+                to_square_name = chess.square_name(to_square)
+                is_capture = board.piece_at(to_square) is not None
+
+                legal_destinations[to_square_name] = {
+                    "square": to_square_name,
+                    "is_capture": is_capture,
+                }
 
     return jsonify({
         "status": "ok",
         "from": square_name,
-        "moves": legal_destinations,
+        "moves": [legal_destinations[key] for key in sorted(legal_destinations.keys())],
     }), 200
 
 @app.route("/reset", methods=["POST"])
 def reset():
     board.reset()
+    clear_bishop_double_move_state()
     return jsonify({"fen": board.fen()})
+
+# View active augments
+@app.route("/augments", methods=["GET"])
+def get_augments():
+    return jsonify({
+        "status": "ok",
+        "active_augments": active_augments
+    })
+
+# Toggle augments on/off
+@app.route("/augments", methods=["POST"])
+def toggle_augment():
+    data = request.get_json()
+
+    side = data.get("side")
+    augment_name = data.get("augment")
+
+    if side not in active_augments:
+        return jsonify({
+            "status": "error",
+            "message": "Unknown side"
+        }), 400
+
+    if augment_name not in active_augments[side]:
+        return jsonify({
+            "status": "error",
+            "message": "Unknown augment"
+        }), 400
+
+    active_augments[side][augment_name] = not active_augments[side][augment_name]
+
+    return jsonify({
+        "status": "ok",
+        "active_augments": active_augments
+    })
 
 if __name__ == "__main__":
     app.run(debug=True)
