@@ -63,13 +63,20 @@ export default function ChessBoard() {
       const data = await res.json();
 
       if (data.status === "ok") {
-        setSelectedSquare(square);
-        setHighlightedSquares(
-          (data.moves || []).map((move: any) => ({
-            square: move.square,
-            isCapture: move.is_capture,
-          }))
-        );
+        if ((data.moves || []).length === 0) {
+          clearHighlights();
+        } else {
+          setSelectedSquare(square);
+          setHighlightedSquares(
+            (data.moves || []).map((move: any) => ({
+              square: move.square,
+              isCapture: move.is_capture,
+            }))
+          );
+        }
+        if (data.message) {
+          setStatus(data.message);
+        }
       }
     } catch (error) {
       console.error("Failed to fetch legal moves:", error);

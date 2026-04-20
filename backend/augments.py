@@ -42,6 +42,13 @@ def is_safe_custom_knight_move(board: chess.Board, move: chess.Move) -> bool:
 
     return not test_board.is_check()
 
+def is_safe_second_knight_move(board: chess.Board, move: chess.Move) -> bool:
+    piece = board.piece_at(move.from_square)
+    if not piece or piece.piece_type != chess.KNIGHT:
+        return False
+
+    return move in board.legal_moves
+
 
 # -------------------------
 # Bishop Augment Helpers

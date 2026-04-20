@@ -21,6 +21,7 @@ export default function AugmentPanel({
   const [showDevControls, setShowDevControls] = useState(false);
   const activeAugmentLabels: Record<string, string> = {
     knight_long_jump: "Knight: 4x1 Jump",
+    knight_second_move_after_capture: "Knight: Move Again After Capture",
     bishop_phase: "Bishop: Move Through One Piece",
     bishop_double_move: "Bishop: Double Move",
     king_guard: "King: Adjacent Ally Protection",

@@ -9,6 +9,7 @@ from augments import (
     get_piece_side,
     is_extended_knight_move,
     is_safe_custom_knight_move,
+    is_safe_second_knight_move,
     is_safe_custom_bishop_move,
     is_safe_second_bishop_move,
 )
@@ -35,6 +36,7 @@ board = chess.Board()
 active_augments = {
     "white": {
         "knight_long_jump": False,
+        "knight_second_move_after_capture": False,
         "bishop_phase": False,
         "bishop_double_move": False,
         "king_guard": False,
@@ -43,6 +45,7 @@ active_augments = {
     },
     "black": {
         "knight_long_jump": False,
+        "knight_second_move_after_capture": False,
         "bishop_phase": False,
         "bishop_double_move": False,
         "king_guard": False,
@@ -62,6 +65,18 @@ def clear_bishop_double_move_state():
     bishop_double_move_state["active"] = False
     bishop_double_move_state["side"] = None
     bishop_double_move_state["bishop_square"] = None
+    
+# Global state tracker for knights
+knight_bonus_move_state = {
+    "active": False,
+    "side": None,
+    "knight_square": None,
+}
+
+def clear_knight_bonus_move_state():
+    knight_bonus_move_state["active"] = False
+    knight_bonus_move_state["side"] = None
+    knight_bonus_move_state["knight_square"] = None
 
 @app.route("/health", methods=["GET"])
 def health():
@@ -278,7 +293,7 @@ def make_move():
             # Complete the second move normally
             board.push(chess_move)
 
-            # Clear pending state so it does NOT loop forever
+            # Clear pending state so it does not loop forever
             clear_bishop_double_move_state()
             
             return jsonify({
@@ -287,6 +302,53 @@ def make_move():
                 "turn": "white" if board.turn else "black",
                 "is_checkmate": board.is_checkmate(),
                 "message": "Second bishop move completed"
+            })
+            
+        # Forced second knight move
+        if knight_bonus_move_state["active"]:
+            required_side = knight_bonus_move_state["side"]
+            required_square_name = knight_bonus_move_state["knight_square"]
+
+            # Must be same side
+            if side != required_side:
+                return jsonify({
+                    "status": "illegal",
+                    "message": "Must complete knight bonus move"
+                })
+
+            # Must be same knight
+            if chess.square_name(chess_move.from_square) != required_square_name:
+                return jsonify({
+                    "status": "illegal",
+                    "message": "Must move the same knight again"
+                })
+
+            # Must still be a knight
+            if piece.piece_type != chess.KNIGHT:
+                return jsonify({
+                    "status": "illegal",
+                    "message": "Second move must be made by that knight"
+                })
+
+            # Must be a valid knight move
+            if not is_safe_second_knight_move(board, chess_move):
+                return jsonify({
+                    "status": "illegal",
+                    "message": "Illegal second knight move"
+                })
+
+            # Complete the second move normally
+            board.push(chess_move)
+            
+            # Clear pending state so it does not loop forever
+            clear_knight_bonus_move_state()
+
+            return jsonify({
+                "status": "ok",
+                "fen": board.fen(),
+                "turn": "white" if board.turn else "black",
+                "is_checkmate": board.is_checkmate(),
+                "message": "Second knight move completed"
             })
 
         # Standard legal move
@@ -307,6 +369,9 @@ def make_move():
             ):
                 # Give same side one extra move
                 board.turn = not board.turn
+                
+                # Prevent conflict with knight bonus move
+                clear_knight_bonus_move_state()
 
                 bishop_double_move_state["active"] = True
                 bishop_double_move_state["side"] = side
@@ -329,6 +394,7 @@ def make_move():
                 and was_capture
             ):
                 clear_bishop_double_move_state()
+                clear_knight_bonus_move_state()
 
                 return jsonify({
                     "status": "ok",
@@ -338,8 +404,35 @@ def make_move():
                     "message": "Bishop capture ends turn"
                 })
 
+            # Knight bonus move triggered after capture
+            if (
+                side_augments["knight_second_move_after_capture"]
+                and moving_piece_type == chess.KNIGHT
+                and was_capture
+            ):
+                # Give same side one extra move
+                board.turn = not board.turn
+                
+                # Prevent conflict with bishop double move
+                clear_bishop_double_move_state()
+
+                knight_bonus_move_state["active"] = True
+                knight_bonus_move_state["side"] = side
+                knight_bonus_move_state["knight_square"] = chess.square_name(
+                    chess_move.to_square
+                )
+
+                return jsonify({
+                    "status": "ok",
+                    "fen": board.fen(),
+                    "turn": side,
+                    "is_checkmate": board.is_checkmate(),
+                    "message": "Knight may move again"
+                })
+
             # Normal move
             clear_bishop_double_move_state()
+            clear_knight_bonus_move_state()
 
             return jsonify({
                 "status": "ok",
@@ -432,6 +525,64 @@ def get_legal_moves(square_name):
                     "square": to_square_name,
                     "is_capture": False,
                 }
+        
+        # If no legal moves, end turn like normal
+        if len(legal_destinations) == 0:
+            clear_bishop_double_move_state()
+            board.turn = not board.turn
+            
+            return jsonify({
+                "status": "ok",
+                "from": square_name,
+                "moves": [],
+                "message": "No available bishop moves, turn skipped"
+            }), 200
+
+        return jsonify({
+            "status": "ok",
+            "from": square_name,
+            "moves": [legal_destinations[key] for key in sorted(legal_destinations.keys())],
+        }), 200
+    
+    # Forced second knight move
+    if knight_bonus_move_state["active"]:
+        required_side = knight_bonus_move_state["side"]
+        required_square_name = knight_bonus_move_state["knight_square"]
+
+        # Only the stored knight on the stored side may move
+        if side != required_side:
+            return jsonify({"status": "ok", "moves": []}), 200
+
+        if chess.square_name(from_square) != required_square_name:
+            return jsonify({"status": "ok", "moves": []}), 200
+
+        legal_destinations = {}
+
+        for move in board.legal_moves:
+            if (
+                move.from_square == from_square
+                and piece.piece_type == chess.KNIGHT
+                and is_safe_second_knight_move(board, move)
+            ):
+                to_square_name = chess.square_name(move.to_square)
+                is_capture = board.piece_at(move.to_square) is not None
+
+                legal_destinations[to_square_name] = {
+                    "square": to_square_name,
+                    "is_capture": is_capture,
+                }
+        
+        # If no legal moves, end turn like normal
+        if len(legal_destinations) == 0:
+            clear_knight_bonus_move_state()
+            board.turn = not board.turn
+            
+            return jsonify({
+                "status": "ok",
+                "from": square_name,
+                "moves": [],
+                "message": "No available knight moves, turn skipped"
+            }), 200
 
         return jsonify({
             "status": "ok",
@@ -510,6 +661,7 @@ def get_legal_moves(square_name):
 def reset():
     board.reset()
     clear_bishop_double_move_state()
+    clear_knight_bonus_move_state()
     return jsonify({"fen": board.fen()})
 
 # View active augments
