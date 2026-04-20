@@ -142,6 +142,94 @@ def is_safe_second_bishop_move(board: chess.Board, move: chess.Move) -> bool:
 # -------------------------
 # King Augment Helpers
 # -------------------------
+def get_orthogonally_adjacent_squares(square: int):
+    file = chess.square_file(square)
+    rank = chess.square_rank(square)
+
+    adjacent = []
+
+    offsets = [
+        (0, 1),   # up
+        (0, -1),  # down
+        (-1, 0),  # left
+        (1, 0),   # right
+    ]
+
+    for df, dr in offsets:
+        new_file = file + df
+        new_rank = rank + dr
+
+        if 0 <= new_file < 8 and 0 <= new_rank < 8:
+            adjacent.append(chess.square(new_file, new_rank))
+
+    return adjacent
+
+def get_king_guarded_squares(board: chess.Board, guarded_side: str, active_augments):
+    if not active_augments.get(guarded_side, {}).get("king_guard", False):
+        return set()
+
+    king_color = chess.WHITE if guarded_side == "white" else chess.BLACK
+    king_square = board.king(king_color)
+
+    if king_square is None:
+        return set()
+
+    return set(get_orthogonally_adjacent_squares(king_square))
+
+def is_blocked_by_king_guard(board: chess.Board, move: chess.Move, moving_side: str, active_augments) -> bool:
+    enemy_side = "black" if moving_side == "white" else "white"
+    guarded_squares = get_king_guarded_squares(board, enemy_side, active_augments)
+
+    return move.to_square in guarded_squares
+
+def is_safe_custom_king_stride(board: chess.Board, move: chess.Move) -> bool:
+    piece = board.piece_at(move.from_square)
+
+    # Must move a king
+    if not piece or piece.piece_type != chess.KING:
+        return False
+
+    from_file, from_rank = square_coords(move.from_square)
+    to_file, to_rank = square_coords(move.to_square)
+
+    df = abs(to_file - from_file)
+    dr = abs(to_rank - from_rank)
+
+    # Cannot stay in place
+    if df == 0 and dr == 0:
+        return False
+
+    # Must be within 2 squares in both directions
+    if df > 2 or dr > 2:
+        return False
+
+    # Destination must be empty (no captures allowed)
+    if board.piece_at(move.to_square) is not None:
+        return False
+
+    # Simulate move
+    temp_board = board.copy()
+    temp_board.remove_piece_at(move.from_square)
+    temp_board.set_piece_at(move.to_square, piece)
+
+    moving_color = piece.color
+    enemy_color = not moving_color
+
+    # The moved king cannot end on an attacked square
+    return not temp_board.is_attacked_by(enemy_color, move.to_square)
+
+def is_safe_king_destination(board: chess.Board, move: chess.Move) -> bool:
+    piece = board.piece_at(move.from_square)
+
+    if not piece or piece.piece_type != chess.KING:
+        return False
+
+    temp_board = board.copy()
+    temp_board.remove_piece_at(move.from_square)
+    temp_board.set_piece_at(move.to_square, piece)
+
+    enemy_color = not piece.color
+    return not temp_board.is_attacked_by(enemy_color, move.to_square)
 
 
 # -------------------------

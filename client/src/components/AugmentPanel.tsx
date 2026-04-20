@@ -24,8 +24,8 @@ export default function AugmentPanel({
     knight_second_move_after_capture: "Knight: Move Again After Capture",
     bishop_phase: "Bishop: Move Through One Piece",
     bishop_double_move: "Bishop: Double Move",
-    king_guard: "King: Adjacent Ally Protection",
-    king_bodyguard: "King: Protected By Nearby Ally",
+    king_guard: "King: Guard Zone",
+    king_stride: "King: Stride",
     random_mutation: "Random Mid-Game Mutation",
   };
 

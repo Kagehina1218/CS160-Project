@@ -39,7 +39,14 @@ export default function ChessBoard() {
     square: string;
     isCapture: boolean;
   };
+
+  type BlockedMove = {
+    square: string;
+    reason: string;
+  };
+
   const [highlightedSquares, setHighlightedSquares] = useState<HighlightMove[]>([]);
+  const [blockedSquares, setBlockedSquares] = useState<BlockedMove[]>([]);
 
   // -------------------------
   // Backend Fetch Helpers
@@ -63,17 +70,22 @@ export default function ChessBoard() {
       const data = await res.json();
 
       if (data.status === "ok") {
-        if ((data.moves || []).length === 0) {
+        const legalMoves = data.moves || [];
+        const blockedMoves = data.blocked_moves || [];
+
+        if (legalMoves.length === 0 && blockedMoves.length === 0) {
           clearHighlights();
         } else {
           setSelectedSquare(square);
           setHighlightedSquares(
-            (data.moves || []).map((move: any) => ({
+            legalMoves.map((move: any) => ({
               square: move.square,
               isCapture: move.is_capture,
             }))
           );
+          setBlockedSquares(blockedMoves);
         }
+
         if (data.message) {
           setStatus(data.message);
         }
@@ -82,6 +94,7 @@ export default function ChessBoard() {
       console.error("Failed to fetch legal moves:", error);
       setSelectedSquare(null);
       setHighlightedSquares([]);
+      setBlockedSquares([]);
     }
   };
 
@@ -119,6 +132,7 @@ export default function ChessBoard() {
   const clearHighlights = () => {
     setSelectedSquare(null);
     setHighlightedSquares([]);
+    setBlockedSquares([]);
   };
 
   // Reset game manually
@@ -235,6 +249,35 @@ export default function ChessBoard() {
         background:
           "radial-gradient(circle, rgba(0,0,0,0.25) 25%, transparent 26%)",
         borderRadius: "50%",
+      };
+    }
+  });
+
+  blockedSquares.forEach(({ square, reason }) => {
+    if (reason === "king_guard") {
+      customSquareStyles[square] = {
+        boxShadow: "inset 0 0 0 4px rgba(255, 165, 0, 0.9)",
+        backgroundColor: "rgba(255, 165, 0, 0.18)",
+      };
+    } else if (reason === "second_bishop_move_no_capture") {
+      customSquareStyles[square] = {
+        boxShadow: "inset 0 0 0 4px rgba(120, 120, 255, 0.9)",
+        backgroundColor: "rgba(120, 120, 255, 0.16)",
+      };
+    } else if (reason === "king_in_check") {
+      customSquareStyles[square] = {
+        boxShadow: "inset 0 0 0 4px rgba(255, 80, 80, 0.95)",
+        backgroundColor: "rgba(255, 80, 80, 0.18)",
+      };
+    } else if (reason === "king_stride_no_capture") {
+      customSquareStyles[square] = {
+        boxShadow: "inset 0 0 0 4px rgba(180, 180, 180, 0.95)",
+        backgroundColor: "rgba(180, 180, 180, 0.20)",
+      };
+    } else {
+      customSquareStyles[square] = {
+        boxShadow: "inset 0 0 0 4px rgba(150, 150, 150, 0.9)",
+        backgroundColor: "rgba(150, 150, 150, 0.14)",
       };
     }
   });

@@ -4,6 +4,17 @@ from flask_cors import CORS
 from clerk_auth import extract_bearer_token, verify_clerk_token
 from database import DbConnection
 
+from messages_service import load_messages, save_messages
+
+from game_state import (
+    board,
+    active_augments,
+    bishop_double_move_state,
+    knight_bonus_move_state,
+    clear_bishop_double_move_state,
+    clear_knight_bonus_move_state,
+)
+
 from augments import (
     square_coords,
     get_piece_side,
@@ -12,6 +23,9 @@ from augments import (
     is_safe_second_knight_move,
     is_safe_custom_bishop_move,
     is_safe_second_bishop_move,
+    is_blocked_by_king_guard,
+    is_safe_custom_king_stride,
+    is_safe_king_destination,
 )
 
 import os
@@ -19,69 +33,14 @@ import json
 import chess
 from datetime import datetime
 
-
-
-MESSAGES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "messages")
-VALID_DIFFICULTIES = {"easy", "medium", "hard"}
-
-
 app = Flask(__name__)
 CORS(app)
 
 db = DbConnection()
 
-board = chess.Board()
-
-# List of active augments
-active_augments = {
-    "white": {
-        "knight_long_jump": False,
-        "knight_second_move_after_capture": False,
-        "bishop_phase": False,
-        "bishop_double_move": False,
-        "king_guard": False,
-        "king_bodyguard": False,
-        "random_mutation": False,
-    },
-    "black": {
-        "knight_long_jump": False,
-        "knight_second_move_after_capture": False,
-        "bishop_phase": False,
-        "bishop_double_move": False,
-        "king_guard": False,
-        "king_bodyguard": False,
-        "random_mutation": False,
-    },
-}
-
-# Global state tracker for bishops
-bishop_double_move_state = {
-    "active": False,
-    "side": None,
-    "bishop_square": None,
-}
-
-def clear_bishop_double_move_state():
-    bishop_double_move_state["active"] = False
-    bishop_double_move_state["side"] = None
-    bishop_double_move_state["bishop_square"] = None
-    
-# Global state tracker for knights
-knight_bonus_move_state = {
-    "active": False,
-    "side": None,
-    "knight_square": None,
-}
-
-def clear_knight_bonus_move_state():
-    knight_bonus_move_state["active"] = False
-    knight_bonus_move_state["side"] = None
-    knight_bonus_move_state["knight_square"] = None
-
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok"}), 200
-
 
 @app.route("/profile", methods=["GET"])
 def get_profile():
@@ -210,29 +169,11 @@ def post_message(difficulty):
     except Exception as exc:
         return jsonify({"message": str(exc)}), 401
     
-def get_messages_file_path(difficulty: str) -> str:
-    if difficulty not in VALID_DIFFICULTIES:
-        raise ValueError("Invalid difficulty")
 
-    os.makedirs(MESSAGES_DIR, exist_ok=True)
-    return os.path.join(MESSAGES_DIR, f"{difficulty}.json")
-    
-def load_messages(difficulty: str):
-    file_path = get_messages_file_path(difficulty)
-    
-    if not os.path.exists(file_path):
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump([], f)
-
-    with open(file_path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-def save_messages(difficulty: str, messages):
     file_path = get_messages_file_path(difficulty)
     
     with open(file_path, "w", encoding="utf-8") as f:
         json.dump(messages, f, indent=2)
-
     
 @app.route("/board", methods=["GET"])
 def get_board():
@@ -256,6 +197,13 @@ def make_move():
 
         side = get_piece_side(piece)
         side_augments = active_augments[side]
+        
+        # King guard
+        if is_blocked_by_king_guard(board, chess_move, side, active_augments):
+            return jsonify({
+                "status": "illegal",
+                "message": "That square is protected by King Guard"
+            })
         
         # Forced second bishop move
         if bishop_double_move_state["active"]:
@@ -478,23 +426,64 @@ def make_move():
                 "turn": "white" if board.turn else "black",
                 "is_checkmate": board.is_checkmate()
             })
+            
+        # King augment: allow moving up to 2 squares in any direction
+        if (
+            side_augments["king_stride"]
+            and piece.piece_type == chess.KING
+            and is_safe_custom_king_stride(board, chess_move)
+        ):
+            if is_blocked_by_king_guard(board, chess_move, side, active_augments):
+                return jsonify({
+                    "status": "illegal",
+                    "message": "That square is protected by King Guard"
+                })
 
-        return jsonify({"status": "illegal", "message": "Illegal move"})
+            board.remove_piece_at(chess_move.from_square)
+            board.set_piece_at(chess_move.to_square, piece)
+            board.turn = not board.turn
+
+            clear_bishop_double_move_state()
+            clear_knight_bonus_move_state()
+
+            return jsonify({
+                "status": "ok",
+                "fen": board.fen(),
+                "turn": "white" if board.turn else "black",
+                "is_checkmate": board.is_checkmate(),
+                "message": "King stride completed"
+            })
+            
+        return jsonify({
+            "status": "illegal",
+            "message": "Illegal move"
+        })
     
-
-    except Exception:
+    except ValueError:
         return jsonify({"status": "error", "message": "Invalid move format"})
+    except Exception as e:
+        print("MOVE ERROR:", e)
+        return jsonify({"status": "error", "message": str(e)})
 
 @app.route("/legal-moves/<square_name>", methods=["GET"])
 def get_legal_moves(square_name):
     try:
         from_square = chess.parse_square(square_name)
     except ValueError:
-        return jsonify({"status": "error", "message": "Invalid square"}), 400
+        return jsonify({
+            "status": "error",
+            "message": "Invalid square",
+            "moves": [],
+            "blocked_moves": [],
+        }), 400
 
     piece = board.piece_at(from_square)
     if not piece:
-        return jsonify({"status": "ok", "moves": []}), 200
+        return jsonify({
+            "status": "ok",
+            "moves": [],
+            "blocked_moves": [],
+        }), 200
 
     side = get_piece_side(piece)
 
@@ -505,45 +494,67 @@ def get_legal_moves(square_name):
 
         # Only the stored bishop on the stored side may move
         if side != required_side:
-            return jsonify({"status": "ok", "moves": []}), 200
+            return jsonify({
+                "status": "ok",
+                "moves": [],
+                "blocked_moves": [],
+            }), 200
 
         if chess.square_name(from_square) != required_square_name:
-            return jsonify({"status": "ok", "moves": []}), 200
+            return jsonify({
+                "status": "ok",
+                "moves": [],
+                "blocked_moves": [],
+            }), 200
 
         legal_destinations = {}
+        blocked_destinations = {}
 
         for move in board.legal_moves:
-            if (
-                move.from_square == from_square
-                and piece.piece_type == chess.BISHOP
-                and board.piece_at(move.to_square) is None
-                and is_safe_second_bishop_move(board, move)
-            ):
-                to_square_name = chess.square_name(move.to_square)
+            if move.from_square != from_square or piece.piece_type != chess.BISHOP:
+                continue
 
+            to_square_name = chess.square_name(move.to_square)
+            is_capture = board.piece_at(move.to_square) is not None
+
+            # Second bishop move cannot capture
+            if is_capture:
+                blocked_destinations[to_square_name] = {
+                    "square": to_square_name,
+                    "reason": "second_bishop_move_no_capture",
+                }
+                continue
+
+            if is_safe_second_bishop_move(board, move):
                 legal_destinations[to_square_name] = {
                     "square": to_square_name,
                     "is_capture": False,
                 }
-        
+
         # If no legal moves, end turn like normal
         if len(legal_destinations) == 0:
             clear_bishop_double_move_state()
             board.turn = not board.turn
-            
+
             return jsonify({
                 "status": "ok",
                 "from": square_name,
                 "moves": [],
+                "blocked_moves": [],
                 "message": "No available bishop moves, turn skipped"
             }), 200
 
         return jsonify({
             "status": "ok",
             "from": square_name,
-            "moves": [legal_destinations[key] for key in sorted(legal_destinations.keys())],
+            "moves": [
+                legal_destinations[key] for key in sorted(legal_destinations.keys())
+            ],
+            "blocked_moves": [
+                blocked_destinations[key] for key in sorted(blocked_destinations.keys())
+            ],
         }), 200
-    
+
     # Forced second knight move
     if knight_bonus_move_state["active"]:
         required_side = knight_bonus_move_state["side"]
@@ -551,10 +562,18 @@ def get_legal_moves(square_name):
 
         # Only the stored knight on the stored side may move
         if side != required_side:
-            return jsonify({"status": "ok", "moves": []}), 200
+            return jsonify({
+                "status": "ok",
+                "moves": [],
+                "blocked_moves": [],
+            }), 200
 
         if chess.square_name(from_square) != required_square_name:
-            return jsonify({"status": "ok", "moves": []}), 200
+            return jsonify({
+                "status": "ok",
+                "moves": [],
+                "blocked_moves": [],
+            }), 200
 
         legal_destinations = {}
 
@@ -571,35 +590,52 @@ def get_legal_moves(square_name):
                     "square": to_square_name,
                     "is_capture": is_capture,
                 }
-        
+
         # If no legal moves, end turn like normal
         if len(legal_destinations) == 0:
             clear_knight_bonus_move_state()
             board.turn = not board.turn
-            
+
             return jsonify({
                 "status": "ok",
                 "from": square_name,
                 "moves": [],
+                "blocked_moves": [],
                 "message": "No available knight moves, turn skipped"
             }), 200
 
         return jsonify({
             "status": "ok",
             "from": square_name,
-            "moves": [legal_destinations[key] for key in sorted(legal_destinations.keys())],
+            "moves": [
+                legal_destinations[key] for key in sorted(legal_destinations.keys())
+            ],
+            "blocked_moves": [],
         }), 200
 
     # Normal turn restriction
     if piece.color != board.turn:
-        return jsonify({"status": "ok", "moves": []}), 200
+        return jsonify({
+            "status": "ok",
+            "moves": [],
+            "blocked_moves": [],
+        }), 200
 
     side_augments = active_augments[side]
     legal_destinations = {}
+    blocked_destinations = {}
 
     # Standard legal moves
     for move in board.legal_moves:
         if move.from_square == from_square:
+            if is_blocked_by_king_guard(board, move, side, active_augments):
+                to_square_name = chess.square_name(move.to_square)
+                blocked_destinations[to_square_name] = {
+                    "square": to_square_name,
+                    "reason": "king_guard",
+                }
+                continue
+
             to_square_name = chess.square_name(move.to_square)
             is_capture = board.piece_at(move.to_square) is not None
 
@@ -627,6 +663,14 @@ def get_legal_moves(square_name):
 
                 if is_safe_custom_knight_move(board, custom_move):
                     to_square_name = chess.square_name(to_square)
+
+                    if is_blocked_by_king_guard(board, custom_move, side, active_augments):
+                        blocked_destinations[to_square_name] = {
+                            "square": to_square_name,
+                            "reason": "king_guard",
+                        }
+                        continue
+
                     is_capture = board.piece_at(to_square) is not None
 
                     legal_destinations[to_square_name] = {
@@ -644,17 +688,80 @@ def get_legal_moves(square_name):
 
             if is_safe_custom_bishop_move(board, custom_move):
                 to_square_name = chess.square_name(to_square)
+
+                if is_blocked_by_king_guard(board, custom_move, side, active_augments):
+                    blocked_destinations[to_square_name] = {
+                        "square": to_square_name,
+                        "reason": "king_guard",
+                    }
+                    continue
+
                 is_capture = board.piece_at(to_square) is not None
 
                 legal_destinations[to_square_name] = {
                     "square": to_square_name,
                     "is_capture": is_capture,
                 }
+                
+    # King stride moves
+    if side_augments["king_stride"] and piece.piece_type == chess.KING:
+        from_file, from_rank = square_coords(from_square)
 
+        for df in range(-2, 3):
+            for dr in range(-2, 3):
+                if df == 0 and dr == 0:
+                    continue
+
+                new_file = from_file + df
+                new_rank = from_rank + dr
+
+                if not (0 <= new_file < 8 and 0 <= new_rank < 8):
+                    continue
+
+                to_square = chess.square(new_file, new_rank)
+                to_square_name = chess.square_name(to_square)
+                custom_move = chess.Move(from_square, to_square)
+
+                destination_piece = board.piece_at(to_square)
+
+                # King stride cannot capture, so occupied squares are blocked
+                if destination_piece is not None:
+                    if destination_piece.color != piece.color:
+                        blocked_destinations[to_square_name] = {
+                            "square": to_square_name,
+                            "reason": "king_stride_no_capture",
+                        }
+                    continue
+
+                # Blocked by enemy king guard
+                if is_blocked_by_king_guard(board, custom_move, side, active_augments):
+                    blocked_destinations[to_square_name] = {
+                        "square": to_square_name,
+                        "reason": "king_guard",
+                    }
+                    continue
+
+                # Square is unsafe because king would be in check there
+                if not is_safe_king_destination(board, custom_move):
+                    blocked_destinations[to_square_name] = {
+                        "square": to_square_name,
+                        "reason": "king_in_check",
+                    }
+                    continue
+
+                # Legal stride move
+                legal_destinations[to_square_name] = {
+                    "square": to_square_name,
+                    "is_capture": False,
+                }
+                
     return jsonify({
         "status": "ok",
         "from": square_name,
         "moves": [legal_destinations[key] for key in sorted(legal_destinations.keys())],
+        "blocked_moves": [
+            blocked_destinations[key] for key in sorted(blocked_destinations.keys())
+        ],
     }), 200
 
 @app.route("/reset", methods=["POST"])
