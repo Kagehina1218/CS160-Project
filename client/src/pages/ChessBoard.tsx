@@ -12,6 +12,8 @@ export default function ChessBoard() {
   const [position, setPosition] = useState<string>("start");
   const [status, setStatus] = useState<string>("");
   const [difficulty, setDifficulty] = useState<string>("easy");
+  const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
+  const [highlightedSquares, setHighlightedSquares] = useState<string[]>([]);
 
   // Load initial board
   useEffect(() => {
@@ -23,33 +25,37 @@ export default function ChessBoard() {
   }, []);
 
   // Handle movement
-  const onDrop = async (sourceSquare: string, targetSquare: string) => {
+  const onDrop = (sourceSquare: string, targetSquare: string) => {
     const move = sourceSquare + targetSquare;
 
-    const res = await fetch("/api/move", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ move, difficulty }),
-    });
+    const sendMove = async () => {
+      try {
+        const res = await fetch("/api/move", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ move }),
+        });
 
-    const data: MoveResponse = await res.json();
+        const data = await res.json();
 
-    if (data.status === "ok") {
-      setPosition(data.fen);
-
-      if (data.is_checkmate) {
-        setStatus("Checkmate!");
-      } else {
-        setStatus(`Turn: ${data.turn} | Mode: ${difficulty}`);
+        if (data.status === "ok") {
+          setPosition(data.fen);
+          setStatus("");
+          clearHighlights();
+        } else {
+          setStatus(data.message || "Illegal move");
+        }
+      } catch (error) {
+        console.error("Move failed:", error);
+        setStatus("Failed to make move");
       }
+    };
 
-      return true;
-    } else {
-      setStatus("Illegal move");
-      return false;
-    }
+    void sendMove();
+
+    return true;
   };
 
   // Reset game manually
@@ -65,6 +71,29 @@ export default function ChessBoard() {
     const data = await res.json();
     setPosition(data.fen);
     setStatus(`New game (${difficulty})`);
+
+    clearHighlights();
+  };
+
+  const fetchLegalMoves = async (square: string) => {
+    try {
+      const res = await fetch(`/api/legal-moves/${square}`);
+      const data = await res.json();
+
+      if (data.status === "ok") {
+        setSelectedSquare(square);
+        setHighlightedSquares(data.moves || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch legal moves:", error);
+      setSelectedSquare(null);
+      setHighlightedSquares([]);
+    }
+  };
+
+  const clearHighlights = () => {
+    setSelectedSquare(null);
+    setHighlightedSquares([]);
   };
 
   // Change difficulty + reset automatically
@@ -94,6 +123,22 @@ export default function ChessBoard() {
     backgroundColor: difficulty === level ? "#4CAF50" : "#ccc",
     color: difficulty === level ? "white" : "black",
     fontWeight: difficulty === level ? "bold" : "normal",
+  });
+
+  // Highlight for legal moves
+  const customSquareStyles: Record<string, React.CSSProperties> = {};
+  if (selectedSquare) {
+    customSquareStyles[selectedSquare] = {
+      backgroundColor: "rgba(255, 255, 0, 0.4)",
+    };
+  }
+
+  highlightedSquares.forEach((square) => {
+    customSquareStyles[square] = {
+      background:
+        "radial-gradient(circle, rgba(0,0,0,0.25) 25%, transparent 26%)",
+      borderRadius: "50%",
+    };
   });
 
   return (
@@ -131,6 +176,11 @@ export default function ChessBoard() {
         <Chessboard
           position={position}
           onPieceDrop={onDrop}
+          onSquareClick={fetchLegalMoves}
+          onPieceDragBegin={(piece, sourceSquare) => {
+            void fetchLegalMoves(sourceSquare);
+          }}
+          customSquareStyles={customSquareStyles}
           id="click-or-drag-to-move"
         />
       </div>

@@ -204,6 +204,33 @@ def make_move():
     except:
         return jsonify({"status": "error"})
 
+@app.route("/legal-moves/<square_name>", methods=["GET"])
+def get_legal_moves(square_name):
+    try:
+        from_square = chess.parse_square(square_name)
+    except ValueError:
+        return jsonify({"status": "error", "message": "Invalid square"}), 400
+
+    piece = board.piece_at(from_square)
+    if not piece:
+        return jsonify({"status": "ok", "moves": []}), 200
+
+    # Only show moves for the side whose turn it is
+    if piece.color != board.turn:
+        return jsonify({"status": "ok", "moves": []}), 200
+
+    legal_destinations = []
+
+    for move in board.legal_moves:
+        if move.from_square == from_square:
+            legal_destinations.append(chess.square_name(move.to_square))
+
+    return jsonify({
+        "status": "ok",
+        "from": square_name,
+        "moves": legal_destinations,
+    }), 200
+
 @app.route("/reset", methods=["POST"])
 def reset():
     board.reset()
