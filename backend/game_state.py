@@ -1,3 +1,4 @@
+from flask import jsonify
 import chess
 
 board = chess.Board()
@@ -47,3 +48,26 @@ def clear_knight_bonus_move_state():
     knight_bonus_move_state["active"] = False
     knight_bonus_move_state["side"] = None
     knight_bonus_move_state["knight_square"] = None
+    
+def build_game_status_response(message: str):
+    is_checkmate = board.is_checkmate()
+    is_stalemate = board.is_stalemate()
+
+    winner = None
+    final_message = message
+
+    if is_checkmate:
+        winner = "black" if board.turn else "white"
+        final_message = f"Checkmate - {winner.capitalize()} wins"
+    elif is_stalemate:
+        final_message = "Stalemate - Draw"
+
+    return jsonify({
+        "status": "ok",
+        "fen": board.fen(),
+        "turn": "white" if board.turn else "black",
+        "is_checkmate": is_checkmate,
+        "is_stalemate": is_stalemate,
+        "winner": winner,
+        "message": final_message,
+    })

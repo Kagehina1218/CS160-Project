@@ -10,6 +10,8 @@ type MoveResponse = {
   fen: string;
   turn: string;
   is_checkmate: boolean;
+  is_stalemate?: boolean;
+  winner?: string | null;
 };
 
 type AugmentMap = Record<string, boolean>;
@@ -30,6 +32,10 @@ export default function ChessBoard() {
   const [status, setStatus] = useState<string>("");
   const [difficulty, setDifficulty] = useState<string>("easy");
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
+  const [gameOverMessage, setGameOverMessage] = useState<string>("");
+  const [isGameOver, setIsGameOver] = useState<boolean>(false);
+  const [showGameOverOverlay, setShowGameOverOverlay] = useState<boolean>(true);
+  const [showSettingsMenu, setShowSettingsMenu] = useState<boolean>(false);
   const [activeAugments, setActiveAugments] = useState<SideAugments>({
     white: {},
     black: {},
@@ -65,11 +71,21 @@ export default function ChessBoard() {
   };
 
   const fetchLegalMoves = async (square: string) => {
+    if (isGameOver) {
+        clearHighlights();
+        return;
+    }
+
     try {
       const res = await fetch(`/api/legal-moves/${square}`);
       const data = await res.json();
 
       if (data.status === "ok") {
+        if (updateGameOverStatus(data)) {
+          clearHighlights();
+          return;
+        }
+
         const legalMoves = data.moves || [];
         const blockedMoves = data.blocked_moves || [];
 
@@ -143,6 +159,10 @@ export default function ChessBoard() {
 
     const data = await res.json();
     setPosition(data.fen);
+    setStatus("");
+    setIsGameOver(false);
+    setGameOverMessage("");
+    setShowGameOverOverlay(false);
     clearHighlights();
     void fetchAugments();
   };
@@ -162,6 +182,10 @@ export default function ChessBoard() {
     const data = await res.json();
     setPosition(data.fen);
     setStatus(`New game (${level})`);
+    setIsGameOver(false);
+    setGameOverMessage("");
+    setShowGameOverOverlay(false);
+    clearHighlights();
   };
 
   // -------------------------
@@ -169,6 +193,8 @@ export default function ChessBoard() {
   // -------------------------
   // Handle movement
   const onDrop = (sourceSquare: string, targetSquare: string) => {
+    if (isGameOver) return false;
+
     const move = sourceSquare + targetSquare;
 
     const sendMove = async () => {
@@ -185,7 +211,11 @@ export default function ChessBoard() {
 
         if (data.status === "ok") {
           setPosition(data.fen);
-          setStatus(data.message || "");
+
+          if (!updateGameOverStatus(data)) {
+            setStatus(data.message || "");
+          }
+
           clearHighlights();
         } else {
           setStatus(data.message || "");
@@ -201,6 +231,35 @@ export default function ChessBoard() {
     return true;
   };
 
+  // Check for game over conditions after each move
+  const updateGameOverStatus = (data: any) => {
+    if (data.is_checkmate) {
+      const message = data.winner
+        ? `Checkmate - ${data.winner.charAt(0).toUpperCase() + data.winner.slice(1)} wins`
+        : "Checkmate";
+
+      setStatus(message);
+      setGameOverMessage(message);
+      setIsGameOver(true);
+      setShowGameOverOverlay(true);
+      return true;
+    }
+
+    if (data.is_stalemate) {
+      const message = "Stalemate - Draw";
+      setStatus(message);
+      setGameOverMessage(message);
+      setIsGameOver(true);
+      setShowGameOverOverlay(true);
+      return true;
+    }
+
+    setIsGameOver(false);
+    setGameOverMessage("");
+    setShowGameOverOverlay(true);
+    return false;
+  };
+
   // -------------------------
   // Effects
   // -------------------------
@@ -210,6 +269,7 @@ export default function ChessBoard() {
       .then((res) => res.json())
       .then((data) => {
         setPosition(data.fen);
+        updateGameOverStatus(data);
       });
     void fetchAugments();
   }, []);
@@ -327,7 +387,74 @@ export default function ChessBoard() {
       >
         {/* LEFT SIDE: Chessboard + controls */}
         <div>
-          <div style={{ width: "400px" }}>
+          {/* Top bar: status + settings */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: "10px",
+              width: "400px",
+            }}
+          >
+            <strong>{status}</strong>
+
+            <div style={{ position: "relative", display: "flex", gap: "8px" }}>
+              {/* Show Result button */}
+              {isGameOver && !showGameOverOverlay && (
+                <button onClick={() => setShowGameOverOverlay(true)}>
+                  Show Result
+                </button>
+              )}
+
+              {/* Settings button */}
+              <button onClick={() => setShowSettingsMenu((prev) => !prev)}>
+                Settings
+              </button>
+
+              {/* Settings dropdown */}
+              {showSettingsMenu && (
+                <div
+                  style={{
+                    position: "absolute",
+                    right: 0,
+                    top: "110%",
+                    backgroundColor: "white",
+                    border: "1px solid #ccc",
+                    borderRadius: "8px",
+                    boxShadow: "0 4px 10px rgba(0,0,0,0.15)",
+                    padding: "10px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "8px",
+                    zIndex: 20,
+                    minWidth: "140px",
+                  }}
+                >
+                  <button
+                    onClick={() => {
+                      setShowSettingsMenu(false);
+                      void resetGame();
+                    }}
+                  >
+                    Reset Game
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setShowSettingsMenu(false);
+                      window.location.href = "/";
+                    }}
+                  >
+                    Back to Home
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Board wrapper */}
+          <div style={{ width: "400px", position: "relative" }}>
             <Chessboard
               position={position}
               onPieceDrop={onDrop}
@@ -338,18 +465,38 @@ export default function ChessBoard() {
               customSquareStyles={customSquareStyles}
               id="click-or-drag-to-move"
             />
+
+            {isGameOver && showGameOverOverlay && (
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  backgroundColor: "rgba(0, 0, 0, 0.55)",
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "center",
+                  alignItems: "center",
+                  borderRadius: "8px",
+                  zIndex: 10,
+                  color: "white",
+                  padding: "20px",
+                  textAlign: "center",
+                }}
+              >
+                <h2 style={{ marginBottom: "16px" }}>{gameOverMessage}</h2>
+
+                <div style={{ display: "flex", gap: "10px" }}>
+                  <button onClick={resetGame}>Play Again</button>
+                  <button onClick={() => setShowGameOverOverlay(false)}>
+                    View Board
+                  </button>
+                  <button onClick={() => (window.location.href = "/")}>
+                    Back to Home
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
-
-          {/* Status */}
-          <p>{status}</p>
-
-          {/* Reset Button */}
-          <button onClick={resetGame}>Reset Game</button>
-
-          {/* Back Button */}
-          <button onClick={() => (window.location.href = "/")}>
-            Back to Home
-          </button>
         </div>
 
         <AugmentPanel

@@ -13,6 +13,7 @@ from game_state import (
     knight_bonus_move_state,
     clear_bishop_double_move_state,
     clear_knight_bonus_move_state,
+    build_game_status_response,
 )
 
 from augments import (
@@ -177,10 +178,19 @@ def post_message(difficulty):
     
 @app.route("/board", methods=["GET"])
 def get_board():
+    is_checkmate = board.is_checkmate()
+    is_stalemate = board.is_stalemate()
+
+    winner = None
+    if is_checkmate:
+        winner = "black" if board.turn else "white"
+
     return jsonify({
         "fen": board.fen(),
         "turn": "white" if board.turn else "black",
-        "is_checkmate": board.is_checkmate()
+        "is_checkmate": is_checkmate,
+        "is_stalemate": is_stalemate,
+        "winner": winner,
     })
 
 @app.route("/move", methods=["POST"])
@@ -244,13 +254,7 @@ def make_move():
             # Clear pending state so it does not loop forever
             clear_bishop_double_move_state()
             
-            return jsonify({
-                "status": "ok",
-                "fen": board.fen(),
-                "turn": "white" if board.turn else "black",
-                "is_checkmate": board.is_checkmate(),
-                "message": "Second bishop move completed"
-            })
+            return build_game_status_response("Second bishop move completed")
             
         # Forced second knight move
         if knight_bonus_move_state["active"]:
@@ -291,13 +295,8 @@ def make_move():
             # Clear pending state so it does not loop forever
             clear_knight_bonus_move_state()
 
-            return jsonify({
-                "status": "ok",
-                "fen": board.fen(),
-                "turn": "white" if board.turn else "black",
-                "is_checkmate": board.is_checkmate(),
-                "message": "Second knight move completed"
-            })
+            return build_game_status_response("Second knight move completed")
+            
 
         # Standard legal move
         if chess_move in board.legal_moves:
@@ -327,13 +326,8 @@ def make_move():
                     chess_move.to_square
                 )
 
-                return jsonify({
-                    "status": "ok",
-                    "fen": board.fen(),
-                    "turn": side,
-                    "is_checkmate": board.is_checkmate(),
-                    "message": "Bishop may move again"
-                })
+                return build_game_status_response("Bishop may move again")
+                
 
             # Bishop capture ends turn
             if (
@@ -344,13 +338,7 @@ def make_move():
                 clear_bishop_double_move_state()
                 clear_knight_bonus_move_state()
 
-                return jsonify({
-                    "status": "ok",
-                    "fen": board.fen(),
-                    "turn": "white" if board.turn else "black",
-                    "is_checkmate": board.is_checkmate(),
-                    "message": "Bishop capture ends turn"
-                })
+                return build_game_status_response("Bishop capture ends turn")
 
             # Knight bonus move triggered after capture
             if (
@@ -370,25 +358,13 @@ def make_move():
                     chess_move.to_square
                 )
 
-                return jsonify({
-                    "status": "ok",
-                    "fen": board.fen(),
-                    "turn": side,
-                    "is_checkmate": board.is_checkmate(),
-                    "message": "Knight may move again"
-                })
+                return build_game_status_response("Knight may move again")
 
             # Normal move
             clear_bishop_double_move_state()
             clear_knight_bonus_move_state()
 
-            return jsonify({
-                "status": "ok",
-                "fen": board.fen(),
-                "turn": "white" if board.turn else "black",
-                "is_checkmate": board.is_checkmate(),
-                "message": "Move completed"
-            })
+            return build_game_status_response("Move completed")
 
         # Knight augment: allow 4x1 movement
         if (
@@ -402,12 +378,7 @@ def make_move():
             board.set_piece_at(chess_move.to_square, piece)
             board.turn = not board.turn
 
-            return jsonify({
-                "status": "ok",
-                "fen": board.fen(),
-                "turn": "white" if board.turn else "black",
-                "is_checkmate": board.is_checkmate()
-            })
+            return build_game_status_response("Knight long jump completed")
             
         # Bishop augment: allow passing through exactly one piece
         if (
@@ -420,12 +391,7 @@ def make_move():
             board.set_piece_at(chess_move.to_square, piece)
             board.turn = not board.turn
 
-            return jsonify({
-                "status": "ok",
-                "fen": board.fen(),
-                "turn": "white" if board.turn else "black",
-                "is_checkmate": board.is_checkmate()
-            })
+            return build_game_status_response("Bishop phase completed")
             
         # King augment: allow moving up to 2 squares in any direction
         if (
@@ -446,13 +412,7 @@ def make_move():
             clear_bishop_double_move_state()
             clear_knight_bonus_move_state()
 
-            return jsonify({
-                "status": "ok",
-                "fen": board.fen(),
-                "turn": "white" if board.turn else "black",
-                "is_checkmate": board.is_checkmate(),
-                "message": "King stride completed"
-            })
+            return build_game_status_response("King stride completed")
             
         return jsonify({
             "status": "illegal",
@@ -467,6 +427,30 @@ def make_move():
 
 @app.route("/legal-moves/<square_name>", methods=["GET"])
 def get_legal_moves(square_name):
+    # Game over checks first
+    if board.is_checkmate():
+        winner = "black" if board.turn else "white"
+        return jsonify({
+            "status": "ok",
+            "moves": [],
+            "blocked_moves": [],
+            "message": f"Checkmate - {winner.capitalize()} wins",
+            "is_checkmate": True,
+            "is_stalemate": False,
+            "winner": winner,
+        }), 200
+
+    if board.is_stalemate():
+        return jsonify({
+            "status": "ok",
+            "moves": [],
+            "blocked_moves": [],
+            "message": "Stalemate - Draw",
+            "is_checkmate": False,
+            "is_stalemate": True,
+            "winner": None,
+        }), 200
+    
     try:
         from_square = chess.parse_square(square_name)
     except ValueError:
