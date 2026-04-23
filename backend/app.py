@@ -1,8 +1,9 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, redirect, url_for
 from flask_cors import CORS
 
 from clerk_auth import extract_bearer_token, verify_clerk_token
 from database import DbConnection
+from agent import get_ai_move
 
 import os
 import json
@@ -188,10 +189,18 @@ def get_board():
 def make_move():
     data = request.get_json()
     move = data.get("move")
+    difficulty = data.get("difficulty", "easy")
+
     try:
         chess_move = chess.Move.from_uci(move)
+
         if chess_move in board.legal_moves:
             board.push(chess_move)
+
+            if not board.is_game_over():
+                ai_move = get_ai_move(board, difficulty)
+                if ai_move:
+                    board.push_uci(ai_move)
 
             return jsonify({
                 "status": "ok",
@@ -199,8 +208,8 @@ def make_move():
                 "turn": "white" if board.turn else "black",
                 "is_checkmate": board.is_checkmate()
             })
-        else:
-            return jsonify({"status": "illegal"})
+
+        return jsonify({"status": "illegal"})
     except:
         return jsonify({"status": "error"})
 

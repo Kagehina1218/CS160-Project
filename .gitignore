@@ -17,3 +17,6 @@ dist/
 # Env files
 .env
 
+# Chess engine
+engine/stockfish.exe
+
