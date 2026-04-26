@@ -2,8 +2,6 @@ import os
 import chess
 import chess.engine
 
-# BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# ENGINE_PATH = os.path.join(BASE_DIR, "engine", "stockfish.exe")
 ENGINE_PATH = "..\engine\stockfish.exe"
 engine = None
 
@@ -25,11 +23,9 @@ piece_values = {
 
 def evaluate(board):
     score = 0
-
     for piece_type in piece_values:
         score += len(board.pieces(piece_type, chess.WHITE)) * piece_values[piece_type]
         score -= len(board.pieces(piece_type, chess.BLACK)) * piece_values[piece_type]
-
     return score
 
 def alphabeta(board, depth, alpha, beta, maximizing):
@@ -42,58 +38,46 @@ def alphabeta(board, depth, alpha, beta, maximizing):
             board.push(move)
             eval = alphabeta(board, depth - 1, alpha, beta, False)
             board.pop()
-
             max_eval = max(max_eval, eval)
             alpha = max(alpha, eval)
-
             if beta <= alpha:
-                break  # prune
-
+                break
         return max_eval
-
     else:
         min_eval = float("inf")
         for move in board.legal_moves:
             board.push(move)
             eval = alphabeta(board, depth - 1, alpha, beta, True)
             board.pop()
-
             min_eval = min(min_eval, eval)
             beta = min(beta, eval)
-
             if beta <= alpha:
-                break 
-
+                break
         return min_eval
-    
+
 def get_best_move(board, depth):
     best_move = None
 
     if board.turn == chess.WHITE:
         best_value = -float("inf")
-
         for move in board.legal_moves:
             board.push(move)
             value = alphabeta(board, depth - 1, -float("inf"), float("inf"), False)
             board.pop()
-
             if value > best_value:
                 best_value = value
                 best_move = move
-
     else:
         best_value = float("inf")
-
         for move in board.legal_moves:
             board.push(move)
             value = alphabeta(board, depth - 1, -float("inf"), float("inf"), True)
             board.pop()
-
             if value < best_value:
                 best_value = value
                 best_move = move
 
-    return best_move.uci()
+    return best_move.uci() if best_move else None
 
 def get_stockfish_move(board):
     if engine:
@@ -107,4 +91,4 @@ def get_ai_move(board, difficulty):
     elif difficulty == "medium":
         return get_best_move(board, depth=4)
     else:
-        return get_stockfish_move(board)  
+        return get_stockfish_move(board)

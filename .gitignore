@@ -17,6 +17,11 @@ dist/
 # Env files
 .env
 
+<<<<<<< HEAD
 # Chess engine
 engine/stockfish.exe
 
+=======
+# Engine
+engine/
+>>>>>>> temp-save
