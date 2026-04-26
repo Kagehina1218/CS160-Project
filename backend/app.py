@@ -14,6 +14,10 @@ from game_state import (
     clear_bishop_double_move_state,
     clear_knight_bonus_move_state,
     build_game_status_response,
+    turn_count,
+    increment_turn_count,
+    reset_turn_count,
+    get_turn_count,
 )
 
 from augments import (
@@ -56,6 +60,7 @@ def _trigger_ai_move():
         ai_move = chess.Move.from_uci(ai_uci)
         if ai_move in board.legal_moves:
             board.push(ai_move)
+            increment_turn_count()
     except Exception as e:
         print(f"AI move error: {e}")
 
@@ -231,6 +236,7 @@ def get_board():
         "is_checkmate": is_checkmate,
         "is_stalemate": is_stalemate,
         "winner": winner,
+        "turn_count": get_turn_count(),
     })
 
 
@@ -732,6 +738,7 @@ def reset():
     board.reset()
     clear_bishop_double_move_state()
     clear_knight_bonus_move_state()
+    reset_turn_count()
     return jsonify({"fen": board.fen(), "difficulty": game_difficulty})
 
 

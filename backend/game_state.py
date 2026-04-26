@@ -3,6 +3,19 @@ import chess
 
 board = chess.Board()
 
+turn_count = 0
+
+def increment_turn_count():
+    global turn_count
+    turn_count += 1
+
+def reset_turn_count():
+    global turn_count
+    turn_count = 0
+
+def get_turn_count():
+    return turn_count
+
 # List of active augments
 active_augments = {
     "white": {
@@ -70,4 +83,5 @@ def build_game_status_response(message: str):
         "is_stalemate": is_stalemate,
         "winner": winner,
         "message": final_message,
+        "turn_count": get_turn_count(),
     })

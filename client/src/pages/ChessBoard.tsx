@@ -40,6 +40,7 @@ export default function ChessBoard() {
     white: {},
     black: {},
   });
+  const [turnCount, setTurnCount] = useState<number>(0);
 
   type HighlightMove = {
     square: string;
@@ -163,6 +164,7 @@ export default function ChessBoard() {
     setIsGameOver(false);
     setGameOverMessage("");
     setShowGameOverOverlay(false);
+    setTurnCount(0);
     clearHighlights();
     void fetchAugments();
   };
@@ -185,6 +187,7 @@ export default function ChessBoard() {
     setIsGameOver(false);
     setGameOverMessage("");
     setShowGameOverOverlay(false);
+    setTurnCount(0);
     clearHighlights();
   };
 
@@ -211,6 +214,7 @@ export default function ChessBoard() {
 
         if (data.status === "ok") {
           setPosition(data.fen);
+          if (data.turn_count !== undefined) setTurnCount(data.turn_count);
 
           if (!updateGameOverStatus(data)) {
             setStatus(data.message || "");
@@ -348,6 +352,9 @@ export default function ChessBoard() {
   return (
     <div style={{ textAlign: "center" }}>
       <h1>Match</h1>
+      <p style={{ margin: "4px 0 12px", color: "#666", fontSize: "14px" }}>
+        Turn {turnCount}
+        </p>
 
       {/* Difficulty Buttons */}
       <div>
