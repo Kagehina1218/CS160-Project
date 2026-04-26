@@ -17,3 +17,5 @@ dist/
 # Env files
 .env
 
+# Engine
+engine/
