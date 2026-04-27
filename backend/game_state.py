@@ -25,6 +25,8 @@ active_augments = {
         "bishop_double_move": False,
         "king_guard": False,
         "king_stride": False,
+        "rook_triple_move_bonus": False,
+        "rook_queen_pawn_capturing_disabled": False,
         "random_mutation": False,
     },
     "black": {
@@ -34,6 +36,8 @@ active_augments = {
         "bishop_double_move": False,
         "king_guard": False,
         "king_stride": False,
+        "rook_triple_move_bonus": False,
+        "rook_queen_pawn_capturing_disabled": False,
         "random_mutation": False,
     },
 }
@@ -52,6 +56,19 @@ knight_bonus_move_state = {
     "knight_square": None,
 }
 
+# Global state tracker for rook
+rook_bonus_move_state = {
+    "active": False,
+    "side": None,
+    "rook_square": None,
+}
+
+# Global state tracker for rook
+pawn_protection_state = {
+    "active": False,
+    "side": None,
+}
+
 def clear_bishop_double_move_state():
     bishop_double_move_state["active"] = False
     bishop_double_move_state["side"] = None
@@ -61,6 +78,19 @@ def clear_knight_bonus_move_state():
     knight_bonus_move_state["active"] = False
     knight_bonus_move_state["side"] = None
     knight_bonus_move_state["knight_square"] = None
+
+def clear_rook_bonus_move_state():
+    rook_bonus_move_state["active"] = False
+    rook_bonus_move_state["side"] = None
+    rook_bonus_move_state["rook_square"] = None
+
+def activate_pawn_protection(side: str):
+    pawn_protection_state["active"] = True
+    pawn_protection_state["side"] = side
+
+def clear_pawn_protection(side: str):
+    pawn_protection_state["active"] = False
+    pawn_protection_state["side"] = None
     
 def build_game_status_response(message: str):
     is_checkmate = board.is_checkmate()

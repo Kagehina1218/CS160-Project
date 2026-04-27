@@ -26,6 +26,8 @@ export default function AugmentPanel({
     bishop_double_move: "Bishop: Double Move",
     king_guard: "King: Guard Zone",
     king_stride: "King: Stride",
+    rook_triple_move_bonus: "Rook: 3+ Squares Extra Move",
+    rook_queen_pawn_capturing_disabled: "Rook/Queen: Pawn Capture Disabled",
     random_mutation: "Random Mid-Game Mutation",
   };
 

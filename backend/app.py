@@ -11,9 +11,14 @@ from game_state import (
     active_augments,
     bishop_double_move_state,
     knight_bonus_move_state,
+    rook_bonus_move_state,
+    pawn_protection_state,
     clear_bishop_double_move_state,
     clear_knight_bonus_move_state,
     build_game_status_response,
+    clear_rook_bonus_move_state,
+    activate_pawn_protection,
+    clear_pawn_protection,
     turn_count,
     increment_turn_count,
     reset_turn_count,
@@ -31,6 +36,9 @@ from augments import (
     is_blocked_by_king_guard,
     is_safe_custom_king_stride,
     is_safe_king_destination,
+    trigger_rook_move,
+    is_safe_second_rook_move,
+    is_pawn_blocked_from_capturing
 )
 
 from agent import get_ai_move
@@ -61,6 +69,8 @@ def _trigger_ai_move():
         if ai_move in board.legal_moves:
             board.push(ai_move)
             increment_turn_count()
+
+            # clear_pawn_protection()
     except Exception as e:
         print(f"AI move error: {e}")
 
@@ -254,6 +264,7 @@ def make_move():
 
         side = get_piece_side(piece)
         side_augments = active_augments[side]
+        print(side_augments)
 
         # King guard
         if is_blocked_by_king_guard(board, chess_move, side, active_augments):
@@ -329,6 +340,40 @@ def make_move():
             clear_knight_bonus_move_state()
 
             return build_game_status_response_with_ai("Second knight move completed")
+        
+        # Forced second rook move
+        if rook_bonus_move_state["active"]:
+            required_side = rook_bonus_move_state["side"]
+            required_square_name = rook_bonus_move_state["rook_square"]
+
+            if side != required_side:
+                return jsonify({
+                    "status": "illegal",
+                    "message": "Must complete rook bonus move"
+                })
+
+            if chess.square_name(chess_move.from_square) != required_square_name:
+                return jsonify({
+                    "status": "illegal",
+                    "message": "Must move the same rook again"
+                })
+
+            if piece.piece_type != chess.ROOK:
+                return jsonify({
+                    "status": "illegal",
+                    "message": "Second move must be made by that rook"
+                })
+
+            if not is_safe_second_rook_move(board, chess_move):
+                return jsonify({
+                    "status": "illegal",
+                    "message": "Illegal second rook move"
+                })
+
+            board.push(chess_move)
+            clear_rook_bonus_move_state()
+
+            return build_game_status_response_with_ai("Second rook move completed")
 
         # Standard legal move
         if chess_move in board.legal_moves:
@@ -336,7 +381,32 @@ def make_move():
             destination_piece = board.piece_at(chess_move.to_square)
             was_capture = destination_piece is not None
 
+            # Check if Pawn is disabled from capturing rook/queen
+            if (is_pawn_blocked_from_capturing(board, chess_move, pawn_protection_state)):
+                return jsonify({
+                    "status": "illegal",
+                    "message": "Pawn cannot capture rook or queen"
+                })
+
             board.push(chess_move)
+
+            # Rook triple move triggered
+            rook_move = trigger_rook_move(board, chess_move, moving_piece_type)
+            if (
+                side_augments["rook_triple_move_bonus"]
+                and moving_piece_type == chess.ROOK
+                and rook_move
+            ):
+                board.turn = not board.turn
+                clear_bishop_double_move_state()
+                clear_knight_bonus_move_state()
+
+                rook_bonus_move_state["active"] = True
+                rook_bonus_move_state["side"] = side
+                rook_bonus_move_state["rook_square"] = chess.square_name(chess_move.to_square)
+
+                # activate_pawn_protection(side)
+                return build_game_status_response("Rook may move again")
 
             # Bishop double move triggered
             if (
@@ -371,6 +441,7 @@ def make_move():
                 and moving_piece_type == chess.KNIGHT
                 and was_capture
             ):
+                print("triggered")
                 board.turn = not board.turn
                 clear_bishop_double_move_state()
 
@@ -384,6 +455,7 @@ def make_move():
             # Normal move — turn passes to black, AI fires
             clear_bishop_double_move_state()
             clear_knight_bonus_move_state()
+            clear_rook_bonus_move_state()
 
             return build_game_status_response_with_ai("Move completed")
 
@@ -590,6 +662,53 @@ def get_legal_moves(square_name):
             "moves": [legal_destinations[key] for key in sorted(legal_destinations.keys())],
             "blocked_moves": [],
         }), 200
+    
+    # Forced second rook move
+    if rook_bonus_move_state["active"]:
+        required_side = rook_bonus_move_state["side"]
+        required_square_name = rook_bonus_move_state["rook_square"]
+
+        if side != required_side:
+            return jsonify({"status": "ok", "moves": [], "blocked_moves": []}), 200
+
+        if chess.square_name(from_square) != required_square_name:
+            return jsonify({"status": "ok", "moves": [], "blocked_moves": []}), 200
+
+        legal_destinations = {}
+
+        for move in board.legal_moves:
+            if (
+                move.from_square == from_square
+                and piece.piece_type == chess.ROOK
+                and is_safe_second_rook_move(board, move)
+            ):
+                to_square_name = chess.square_name(move.to_square)
+                is_capture = board.piece_at(move.to_square) is not None
+
+                legal_destinations[to_square_name] = {
+                    "square": to_square_name,
+                    "is_capture": is_capture,
+                }
+
+        if len(legal_destinations) == 0:
+            clear_rook_bonus_move_state()
+            board.turn = not board.turn
+
+            return jsonify({
+                "status": "ok",
+                "from": square_name,
+                "moves": [],
+                "blocked_moves": [],
+                "message": "No available rook moves, turn skipped"
+            }), 200
+
+        return jsonify({
+            "status": "ok",
+            "from": square_name,
+            "moves": [legal_destinations[key] for key in sorted(legal_destinations.keys())],
+            "blocked_moves": [],
+        }), 200
+
 
     # Normal turn restriction
     if piece.color != board.turn:
@@ -738,6 +857,7 @@ def reset():
     board.reset()
     clear_bishop_double_move_state()
     clear_knight_bonus_move_state()
+    clear_rook_bonus_move_state()
     reset_turn_count()
     return jsonify({"fen": board.fen(), "difficulty": game_difficulty})
 

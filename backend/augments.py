@@ -132,7 +132,47 @@ def is_safe_second_bishop_move(board: chess.Board, move: chess.Move) -> bool:
 # -------------------------
 # Rook Augment Helpers
 # -------------------------
+def is_triple_rook_move(from_square: int, to_square: int) -> bool:
+    from_file, from_rank = square_coords(from_square)
+    to_file, to_rank = square_coords(to_square)
 
+    file_diff = abs(from_file - to_file)
+    rank_diff = abs(from_rank - to_rank)
+
+    if file_diff != 0 and rank_diff != 0:
+        return False
+    
+    return max(file_diff, rank_diff) >= 3
+
+def trigger_rook_move(board: chess.Board, move: chess.Move, piece) -> bool:
+    if piece != chess.ROOK:
+        return False
+    
+    return is_triple_rook_move(move.from_square, move.to_square)
+
+def is_safe_second_rook_move(board: chess.Board, move: chess.Move) -> bool:
+    piece = board.piece_at(move.from_square)
+    if not piece or piece.piece_type != chess.ROOK:
+        return False
+
+    return move in board.legal_moves
+
+def is_pawn_blocked_from_capturing(board: chess.Board, move: chess.Move, pawn_protection_state) -> bool:
+    attacker = board.piece_at(move.from_square)
+    target = board.piece_at(move.to_square)
+
+    if not attacker or not target: return False
+
+    protected_side = pawn_protection_state["side"]
+    
+    if (
+        attacker.piece_type == chess.PAWN 
+        and get_piece_side(target) == protected_side 
+        and target.piece_type in [chess.ROOK, chess.QUEEN]
+    ):
+        return True
+    
+    return False
 
 # -------------------------
 # Queen Augment Helpers
