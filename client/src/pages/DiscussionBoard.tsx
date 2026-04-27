@@ -1,105 +1,105 @@
 import { useEffect, useState } from "react";
-import { useAuth } from "@clerk/react";
 import { useNavigate } from "react-router-dom";
+import { UserButton, useAuth, useUser } from "@clerk/react";
 
-type Message = {
+type Profile = {
   id: number;
-  username: string;
   clerk_user_id: string;
-  message: string;
-  timestamp: string;
+  email: string | null;
+  display_name: string | null;
+  bio: string | null;
+  rating: number;
+  wins: number;
+  losses: number;
+  games_played: number;
 };
 
-export default function DiscussionBoard() {
-  const { getToken, isLoaded } = useAuth();
+type LeaderboardEntry = {
+  rank: number;
+  name: string;
+  rating: number;
+  wins: number;
+  losses: number;
+  games_played: number;
+  win_rate: number;
+  is_ai: boolean;
+  is_current_user: boolean;
+};
+
+type MenuCardProps = {
+  title: string;
+  description: string;
+  onClick: () => void;
+};
+
+function MenuCard({ title, description, onClick }: MenuCardProps) {
+  return (
+    <button className="menu-box menu-box-button" onClick={onClick} type="button">
+      <h3>{title}</h3>
+      <p>{description}</p>
+      <span className="menu-action">Open</span>
+    </button>
+  );
+}
+
+export default function MainMenu() {
+  const { user, isLoaded: userLoaded } = useUser();
+  const { getToken, isLoaded: authLoaded } = useAuth();
   const navigate = useNavigate();
 
-  const [difficulty, setDifficulty] = useState("easy");
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [newMessage, setNewMessage] = useState("");
-  const [error, setError] = useState("");
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [error, setError] = useState<string>("");
   const [loading, setLoading] = useState(true);
 
-  const fetchMessages = async (selectedDifficulty: string) => {
-    try {
-      setLoading(true);
-      setError("");
-
-      const token = await getToken();
-
-      if (!token) {
-        throw new Error("No Clerk token found");
-      }
-
-      const res = await fetch(`/api/messages/${selectedDifficulty}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      const text = await res.text();
-      const data = text ? JSON.parse(text) : {};
-
-      if (!res.ok) {
-        throw new Error(data.message || "Failed to load messages");
-      }
-
-      setMessages(data.messages ?? []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load messages");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    if (!isLoaded) return;
-    void fetchMessages(difficulty);
-  }, [isLoaded, difficulty]);
+    const loadData = async () => {
+      if (!authLoaded || !userLoaded) return;
 
-  const handlePostMessage = async () => {
-    try {
-      setError("");
+      try {
+        setLoading(true);
+        setError("");
 
-      const trimmedMessage = newMessage.trim();
-      if (!trimmedMessage) {
-        setError("Message cannot be empty");
-        return;
-      }
+        const token = await getToken();
+        if (!token) throw new Error("No Clerk token found");
 
-      const token = await getToken();
-
-      if (!token) {
-        throw new Error("No Clerk token found");
-      }
-
-      const res = await fetch(`/api/messages/${difficulty}`, {
-        method: "POST",
-        headers: {
+        const headers = {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          message: trimmedMessage,
-        }),
-      });
+        };
 
-      const text = await res.text();
-      const data = text ? JSON.parse(text) : {};
+        const [profileRes, leaderboardRes] = await Promise.all([
+          fetch("/api/profile", { headers }),
+          fetch("/api/leaderboard", { headers }),
+        ]);
 
-      if (!res.ok) {
-        throw new Error(data.message || "Failed to post message");
+        const profileText = await profileRes.text();
+        const leaderboardText = await leaderboardRes.text();
+
+        const profileData = profileText ? JSON.parse(profileText) : {};
+        const leaderboardData = leaderboardText ? JSON.parse(leaderboardText) : {};
+
+        if (!profileRes.ok) throw new Error(profileData.message || "Failed to load profile");
+        if (!leaderboardRes.ok) throw new Error(leaderboardData.message || "Failed to load leaderboard");
+
+        setProfile(profileData.profile ?? null);
+        setLeaderboard(leaderboardData.leaderboard ?? []);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load data");
+      } finally {
+        setLoading(false);
       }
+    };
 
-      setMessages(data.messages ?? []);
-      setNewMessage("");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to post message");
-    }
+    void loadData();
+  }, [authLoaded, userLoaded, getToken]);
+
+  const handleComingSoon = (feature: string) => {
+    alert(`${feature} is not implemented yet.`);
   };
 
-  if (!isLoaded || loading) {
-    return <div className="center-screen">Loading discussion board...</div>;
+  if (!authLoaded || !userLoaded || loading) {
+    return <div className="center-screen">Loading menu...</div>;
   }
 
   return (
@@ -108,68 +108,101 @@ export default function DiscussionBoard() {
         <div className="menu-top">
           <div>
             <p className="menu-badge">♟ RogueChess</p>
-            <h1 className="menu-title">Discussion Board</h1>
+            <h1 className="menu-title">
+              Welcome, {profile?.display_name || user?.firstName || user?.fullName || "Player"}
+            </h1>
             <p className="menu-subtitle">
-              Leave notes and strategy tips by difficulty.
+              Signed in with Clerk. Your app profile is loaded from Flask + SQLite.
             </p>
           </div>
 
-          <button type="button" className="menu-box-button" onClick={() => navigate("/menu")}>
-            Back to Menu
-          </button>
+          <UserButton />
         </div>
 
         {error && <div className="message error-message">{error}</div>}
 
         <div className="stats-row">
-          <button type="button" className="stat-chip" onClick={() => setDifficulty("easy")}>
-            Easy
-          </button>
-          <button type="button" className="stat-chip" onClick={() => setDifficulty("medium")}>
-            Medium
-          </button>
-          <button type="button" className="stat-chip" onClick={() => setDifficulty("hard")}>
-            Hard
-          </button>
+          <div className="stat-chip">Rating: {profile?.rating ?? 1200}</div>
+          <div className="stat-chip">Wins: {profile?.wins ?? 0}</div>
+          <div className="stat-chip">Losses: {profile?.losses ?? 0}</div>
+          <div className="stat-chip">Games: {profile?.games_played ?? 0}</div>
+          <div className="stat-chip">
+            Win Rate:{" "}
+            {profile && profile.games_played > 0
+              ? `${Math.round((profile.wins / profile.games_played) * 100)}%`
+              : "0%"}
+          </div>
         </div>
 
         <div className="leaderboard-section">
           <div className="leaderboard-header">
-            <h2>{difficulty.charAt(0).toUpperCase() + difficulty.slice(1)} Messages</h2>
-            <p>Read previous notes or post your own.</p>
+            <h2>Leaderboard</h2>
+            <p>See how you rank against other players.</p>
           </div>
 
           <div className="leaderboard-table">
-            {messages.length === 0 ? (
-              <p>No messages yet for this difficulty.</p>
+            <div className="leaderboard-row leaderboard-head">
+              <span>Rank</span>
+              <span>Player</span>
+              <span>Rating</span>
+              <span>W-L</span>
+              <span>Win Rate</span>
+            </div>
+
+            {leaderboard.length === 0 ? (
+              <p style={{ color: "#94a3b8", padding: "12px 0" }}>No players yet.</p>
             ) : (
-              messages.map((msg) => (
-                <div key={msg.id} className="leaderboard-row" style={{ display: "block" }}>
-                  <strong>{msg.username}</strong>
-                  <p style={{ margin: "0.35rem 0" }}>{msg.message}</p>
-                  <small>{msg.timestamp}</small>
+              leaderboard.map((entry) => (
+                <div
+                  key={`${entry.name}-${entry.rank}`}
+                  className={`leaderboard-row ${entry.is_current_user ? "current-user-row" : ""}`}
+                >
+                  <span>#{entry.rank}</span>
+                  <span>
+                    {entry.name} {entry.is_ai ? "🤖" : "👤"}
+                    {entry.is_current_user && (
+                      <span style={{ marginLeft: "6px", fontSize: "0.75rem", color: "#ec4899" }}>
+                        (you)
+                      </span>
+                    )}
+                  </span>
+                  <span>{entry.rating}</span>
+                  <span>
+                    {entry.wins}–{entry.losses}
+                  </span>
+                  <span>{entry.win_rate}%</span>
                 </div>
               ))
             )}
           </div>
         </div>
 
-        <div style={{ marginTop: "1.5rem" }}>
-          <textarea
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            placeholder={`Write a message for ${difficulty} mode...`}
-            rows={4}
-            style={{
-              width: "100%",
-              padding: "0.75rem",
-              borderRadius: "12px",
-              marginBottom: "0.75rem",
-            }}
+        <div className="menu-grid">
+          <MenuCard
+            title="Quick Match"
+            description="Start a fast game and jump right into action."
+            onClick={() => navigate("/game")}
           />
-          <button type="button" className="menu-box menu-box-button" onClick={handlePostMessage}>
-            Post Message
-          </button>
+          <MenuCard
+            title="Multiplayer"
+            description="Play against other users when matchmaking is connected."
+            onClick={() => handleComingSoon("Multiplayer")}
+          />
+          <MenuCard
+            title="Abilities"
+            description="View special roguelike upgrades and match modifiers."
+            onClick={() => handleComingSoon("Abilities")}
+          />
+          <MenuCard
+            title="Profile"
+            description="Track progress, wins, streaks, and saved data."
+            onClick={() => handleComingSoon("Profile")}
+          />
+          <MenuCard
+            title="Discussion Board"
+            description="Read and post difficulty-based strategy messages."
+            onClick={() => navigate("/discussion")}
+          />
         </div>
       </div>
     </div>
