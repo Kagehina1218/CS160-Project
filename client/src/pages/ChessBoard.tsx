@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Chessboard } from "react-chessboard";
 import AugmentPanel from "../components/AugmentPanel";
+import AugmentDraftPopup from "../components/AugmentPopup"; // ADD THIS
 
 // -------------------------
 // Type Definitions
@@ -41,6 +42,7 @@ export default function ChessBoard() {
     black: {},
   });
   const [turnCount, setTurnCount] = useState<number>(0);
+  const [boardLocked, setBoardLocked] = useState<boolean>(false); // ADD THIS
 
   type HighlightMove = {
     square: string;
@@ -72,9 +74,9 @@ export default function ChessBoard() {
   };
 
   const fetchLegalMoves = async (square: string) => {
-    if (isGameOver) {
-        clearHighlights();
-        return;
+    if (isGameOver || boardLocked) { // ADD boardLocked check
+      clearHighlights();
+      return;
     }
 
     try {
@@ -152,7 +154,6 @@ export default function ChessBoard() {
     setBlockedSquares([]);
   };
 
-  // Reset game manually
   const resetGame = async () => {
     const res = await fetch("/api/reset", {
       method: "POST",
@@ -165,11 +166,11 @@ export default function ChessBoard() {
     setGameOverMessage("");
     setShowGameOverOverlay(false);
     setTurnCount(0);
+    setBoardLocked(false); // ADD THIS
     clearHighlights();
     void fetchAugments();
   };
 
-  // Change difficulty + reset automatically
   const changeDifficulty = async (level: string) => {
     setDifficulty(level);
 
@@ -188,15 +189,15 @@ export default function ChessBoard() {
     setGameOverMessage("");
     setShowGameOverOverlay(false);
     setTurnCount(0);
+    setBoardLocked(false); // ADD THIS
     clearHighlights();
   };
 
   // -------------------------
   // Board Interaction Handlers
   // -------------------------
-  // Handle movement
   const onDrop = (sourceSquare: string, targetSquare: string) => {
-    if (isGameOver) return false;
+    if (isGameOver || boardLocked) return false; // ADD boardLocked check
 
     const move = sourceSquare + targetSquare;
 
@@ -214,13 +215,20 @@ export default function ChessBoard() {
 
         if (data.status === "ok") {
           setPosition(data.fen);
-          if (data.turn_count !== undefined) setTurnCount(data.turn_count);
+
+          if (data.turn_count !== undefined) {
+            setTurnCount(data.turn_count);
+          }
 
           if (!updateGameOverStatus(data)) {
             setStatus(data.message || "");
           }
 
           clearHighlights();
+
+          // ADD THIS: disable the augment after White's move completes
+          await disableAllWhiteAugments();
+          void fetchAugments();
         } else {
           setStatus(data.message || "");
         }
@@ -231,11 +239,30 @@ export default function ChessBoard() {
     };
 
     void sendMove();
-
     return true;
   };
 
-  // Check for game over conditions after each move
+  // ADD THIS: turns off every white augment after the move resolves
+  const disableAllWhiteAugments = async () => {
+    try {
+      const res = await fetch("/api/augments");
+      const data = await res.json();
+      const currentWhite: AugmentMap = data.active_augments?.white ?? {};
+
+      for (const [aug, isOn] of Object.entries(currentWhite)) {
+        if (isOn) {
+          await fetch("/api/augments", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ side: "white", augment: aug }),
+          });
+        }
+      }
+    } catch (err) {
+      console.error("Failed to clear white augments:", err);
+    }
+  };
+
   const updateGameOverStatus = (data: any) => {
     if (data.is_checkmate) {
       const message = data.winner
@@ -267,22 +294,27 @@ export default function ChessBoard() {
   // -------------------------
   // Effects
   // -------------------------
-  // Load initial board
   useEffect(() => {
     fetch("/api/board")
       .then((res) => res.json())
       .then((data) => {
         setPosition(data.fen);
+        setTurnCount(data.turn_count ?? 0); // ADD THIS — sync turn count on load
         updateGameOverStatus(data);
       });
     void fetchAugments();
   }, []);
 
-  
+  // ADD THIS: lock the board when it's a draft turn (every 3rd turn)
+  useEffect(() => {
+    if (turnCount > 0 && (turnCount % 3 === 0)) {
+      setBoardLocked(true);
+    }
+  }, [turnCount]);
+
   // -------------------------
   // Board Styles
   // -------------------------
-  // Button styling
   const getButtonStyle = (level: string) => ({
     padding: "10px 15px",
     margin: "5px",
@@ -294,7 +326,6 @@ export default function ChessBoard() {
     fontWeight: difficulty === level ? "bold" : "normal",
   });
 
-  // Highlight for legal moves
   const customSquareStyles: Record<string, React.CSSProperties> = {};
   if (selectedSquare) {
     customSquareStyles[selectedSquare] = {
@@ -310,8 +341,7 @@ export default function ChessBoard() {
       };
     } else {
       customSquareStyles[square] = {
-        background:
-          "radial-gradient(circle, rgba(0,0,0,0.25) 25%, transparent 26%)",
+        background: "radial-gradient(circle, rgba(0,0,0,0.25) 25%, transparent 26%)",
         borderRadius: "50%",
       };
     }
@@ -354,105 +384,70 @@ export default function ChessBoard() {
       <h1>Match</h1>
       <p style={{ margin: "4px 0 12px", color: "#666", fontSize: "14px" }}>
         Turn {turnCount}
-        </p>
+      </p>
+
+      {/* ADD THIS: Augment draft popup */}
+      <AugmentDraftPopup
+        turnCount={turnCount}
+        onDraftComplete={() => {
+          void fetchAugments();
+          setBoardLocked(false);
+        }}
+      />
 
       {/* Difficulty Buttons */}
       <div>
         <h3>Select Difficulty</h3>
-
-        <button
-          style={getButtonStyle("easy")}
-          onClick={() => changeDifficulty("easy")}
-        >
-          Easy
-        </button>
-
-        <button
-          style={getButtonStyle("medium")}
-          onClick={() => changeDifficulty("medium")}
-        >
-          Medium
-        </button>
-
-        <button
-          style={getButtonStyle("hard")}
-          onClick={() => changeDifficulty("hard")}
-        >
-          Hard
-        </button>
+        <button style={getButtonStyle("easy")} onClick={() => changeDifficulty("easy")}>Easy</button>
+        <button style={getButtonStyle("medium")} onClick={() => changeDifficulty("medium")}>Medium</button>
+        <button style={getButtonStyle("hard")} onClick={() => changeDifficulty("hard")}>Hard</button>
       </div>
 
-      {/* Main Layout: Board + Augments */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "flex-start",
-          gap: "2rem",
-          marginTop: "20px",
-        }}
-      >
-        {/* LEFT SIDE: Chessboard + controls */}
+      {/* Main Layout */}
+      <div style={{
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "flex-start",
+        gap: "2rem",
+        marginTop: "20px",
+      }}>
+        {/* LEFT: Board + controls */}
         <div>
-          {/* Top bar: status + settings */}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: "10px",
-              width: "400px",
-            }}
-          >
+          <div style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: "10px",
+            width: "400px",
+          }}>
             <strong>{status}</strong>
 
             <div style={{ position: "relative", display: "flex", gap: "8px" }}>
-              {/* Show Result button */}
               {isGameOver && !showGameOverOverlay && (
-                <button onClick={() => setShowGameOverOverlay(true)}>
-                  Show Result
-                </button>
+                <button onClick={() => setShowGameOverOverlay(true)}>Show Result</button>
               )}
+              <button onClick={() => setShowSettingsMenu((prev) => !prev)}>Settings</button>
 
-              {/* Settings button */}
-              <button onClick={() => setShowSettingsMenu((prev) => !prev)}>
-                Settings
-              </button>
-
-              {/* Settings dropdown */}
               {showSettingsMenu && (
-                <div
-                  style={{
-                    position: "absolute",
-                    right: 0,
-                    top: "110%",
-                    backgroundColor: "white",
-                    border: "1px solid #ccc",
-                    borderRadius: "8px",
-                    boxShadow: "0 4px 10px rgba(0,0,0,0.15)",
-                    padding: "10px",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "8px",
-                    zIndex: 20,
-                    minWidth: "140px",
-                  }}
-                >
-                  <button
-                    onClick={() => {
-                      setShowSettingsMenu(false);
-                      void resetGame();
-                    }}
-                  >
+                <div style={{
+                  position: "absolute",
+                  right: 0,
+                  top: "110%",
+                  backgroundColor: "white",
+                  border: "1px solid #ccc",
+                  borderRadius: "8px",
+                  boxShadow: "0 4px 10px rgba(0,0,0,0.15)",
+                  padding: "10px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "8px",
+                  zIndex: 20,
+                  minWidth: "140px",
+                }}>
+                  <button onClick={() => { setShowSettingsMenu(false); void resetGame(); }}>
                     Reset Game
                   </button>
-
-                  <button
-                    onClick={() => {
-                      setShowSettingsMenu(false);
-                      window.location.href = "/";
-                    }}
-                  >
+                  <button onClick={() => { setShowSettingsMenu(false); window.location.href = "/"; }}>
                     Back to Home
                   </button>
                 </div>
@@ -460,7 +455,6 @@ export default function ChessBoard() {
             </div>
           </div>
 
-          {/* Board wrapper */}
           <div style={{ width: "400px", position: "relative" }}>
             <Chessboard
               position={position}
@@ -473,33 +467,38 @@ export default function ChessBoard() {
               id="click-or-drag-to-move"
             />
 
-            {isGameOver && showGameOverOverlay && (
-              <div
-                style={{
-                  position: "absolute",
-                  inset: 0,
-                  backgroundColor: "rgba(0, 0, 0, 0.55)",
-                  display: "flex",
-                  flexDirection: "column",
-                  justifyContent: "center",
-                  alignItems: "center",
-                  borderRadius: "8px",
-                  zIndex: 10,
-                  color: "white",
-                  padding: "20px",
-                  textAlign: "center",
-                }}
-              >
-                <h2 style={{ marginBottom: "16px" }}>{gameOverMessage}</h2>
+            {/* ADD THIS: dim the board while locked */}
+            {boardLocked && !isGameOver && (
+              <div style={{
+                position: "absolute",
+                inset: 0,
+                backgroundColor: "rgba(0,0,0,0.35)",
+                borderRadius: "8px",
+                zIndex: 5,
+                pointerEvents: "none",
+              }} />
+            )}
 
+            {isGameOver && showGameOverOverlay && (
+              <div style={{
+                position: "absolute",
+                inset: 0,
+                backgroundColor: "rgba(0, 0, 0, 0.55)",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "center",
+                alignItems: "center",
+                borderRadius: "8px",
+                zIndex: 10,
+                color: "white",
+                padding: "20px",
+                textAlign: "center",
+              }}>
+                <h2 style={{ marginBottom: "16px" }}>{gameOverMessage}</h2>
                 <div style={{ display: "flex", gap: "10px" }}>
                   <button onClick={resetGame}>Play Again</button>
-                  <button onClick={() => setShowGameOverOverlay(false)}>
-                    View Board
-                  </button>
-                  <button onClick={() => (window.location.href = "/")}>
-                    Back to Home
-                  </button>
+                  <button onClick={() => setShowGameOverOverlay(false)}>View Board</button>
+                  <button onClick={() => (window.location.href = "/")}>Back to Home</button>
                 </div>
               </div>
             )}
