@@ -37,11 +37,20 @@ def init_db() -> None:
             opponent_type TEXT NOT NULL,
             result TEXT NOT NULL,
             rating_change INTEGER DEFAULT 0,
+            difficulty TEXT DEFAULT 'medium',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (player_clerk_id) REFERENCES profiles(clerk_user_id)
         )
         """
     )
+
+    # Migration: add difficulty column if it doesn't exist yet
+    # (handles databases created before this fix)
+    try:
+        cursor.execute("ALTER TABLE games ADD COLUMN difficulty TEXT DEFAULT 'medium'")
+        print("Migrated: added difficulty column to games table")
+    except sqlite3.OperationalError:
+        pass  # Column already exists, that's fine
 
     conn.commit()
     conn.close()

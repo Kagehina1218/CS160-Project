@@ -5,6 +5,8 @@ import SignUpPage from "./pages/SignUp";
 import MainMenu from "./pages/MainMenu";
 import DiscussionBoard from "./pages/DiscussionBoard";
 import ChessBoard from "./pages/ChessBoard";
+import ProfilePage from "./pages/Profile";
+import AbilitiesPage from "./pages/Abilities";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isLoaded, isSignedIn } = useAuth();
@@ -26,30 +28,12 @@ export default function App() {
       <Route path="/" element={<Navigate to="/menu" replace />} />
       <Route path="/sign-in/*" element={<Login />} />
       <Route path="/sign-up/*" element={<SignUpPage />} />
-      <Route
-        path="/menu"
-        element={
-          <ProtectedRoute>
-            <MainMenu />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-      path="/discussion"
-      element={
-        <ProtectedRoute>
-          <DiscussionBoard />
-        </ProtectedRoute>
-      }
-      />
-      <Route
-      path="/game"
-      element={
-        <ProtectedRoute>
-          <ChessBoard />
-        </ProtectedRoute>
-      }
-      />
+
+      <Route path="/menu" element={<ProtectedRoute><MainMenu /></ProtectedRoute>} />
+      <Route path="/discussion" element={<ProtectedRoute><DiscussionBoard /></ProtectedRoute>} />
+      <Route path="/game" element={<ProtectedRoute><ChessBoard /></ProtectedRoute>} />
+      <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+      <Route path="/abilities" element={<ProtectedRoute><AbilitiesPage /></ProtectedRoute>} />
     </Routes>
   );
 }
