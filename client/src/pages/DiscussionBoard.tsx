@@ -107,7 +107,7 @@ export default function MainMenu() {
       <div className="menu-card">
         <div className="menu-top">
           <div>
-            <p className="menu-badge">♟ RogueChess</p>
+            <p className="menu-badge">♟ Augmented Chess</p>
             <h1 className="menu-title">
               Welcome, {profile?.display_name || user?.firstName || user?.fullName || "Player"}
             </h1>
@@ -190,7 +190,7 @@ export default function MainMenu() {
           />
           <MenuCard
             title="Abilities"
-            description="View special roguelike upgrades and match modifiers."
+            description="View special upgrades and match modifiers."
             onClick={() => handleComingSoon("Abilities")}
           />
           <MenuCard

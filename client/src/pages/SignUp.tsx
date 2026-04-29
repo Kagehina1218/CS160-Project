@@ -6,7 +6,7 @@ export default function SignUpPage() {
     <div className="auth-page">
       <div className="auth-header">
   <div className="logo">♟</div>
-  <h1 className="brand-title">RogueChess</h1>
+  <h1 className="brand-title">Augmented Chess</h1>
   <p className="brand-subtitle">
     Play smarter. Compete harder.
   </p>

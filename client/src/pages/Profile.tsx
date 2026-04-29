@@ -99,7 +99,7 @@ export default function ProfilePage() {
         {/* Header */}
         <div className="menu-top">
           <div>
-            <p className="menu-badge">♟ RogueChess</p>
+            <p className="menu-badge">♟ Augmented Chess</p>
             <h1 className="menu-title">
               {user?.firstName ?? user?.fullName ?? "Player"}'s Profile
             </h1>

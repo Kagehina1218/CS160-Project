@@ -5,7 +5,7 @@ export default function Login() {
     <div className="auth-page">
       <div className="auth-header">
   <div className="logo">♟</div>
-  <h1 className="brand-title">RogueChess</h1>
+  <h1 className="brand-title">Augmented Chess</h1>
   <p className="brand-subtitle">
     Play smarter. Compete harder.
   </p>
@@ -46,7 +46,7 @@ export default function Login() {
 
         <div className="mini-feature">
           <span>♜</span>
-          <h4>RogueChess</h4>
+          <h4>Augmented Chess</h4>
           <p>Connected backend</p>
         </div>
       </div>

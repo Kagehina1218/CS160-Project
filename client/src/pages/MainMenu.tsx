@@ -93,7 +93,7 @@ export default function MainMenu() {
       <div className="menu-card">
         <div className="menu-top">
           <div>
-            <p className="menu-badge">♟ RogueChess</p>
+            <p className="menu-badge">♟ Augmented Chess</p>
             <h1 className="menu-title">
               Welcome, {profile?.display_name || user?.firstName || user?.fullName || "Player"}
             </h1>
@@ -171,7 +171,7 @@ export default function MainMenu() {
           />
           <MenuCard
             title="Abilities"
-            description="View all special roguelike augments and what they do."
+            description="View all special augments and what they do."
             onClick={() => navigate("/abilities")}
           />
           <MenuCard
