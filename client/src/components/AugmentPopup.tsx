@@ -3,6 +3,26 @@ import { useEffect, useRef, useState } from "react";
 // ─── Augment definitions ──────────────────────────────────────────────────────
 
 export const AUGMENTS = [
+  // ── Pawn ──────────────────────────────────────────────────────────────────
+  {
+    key: "pawn_two_hits",
+    label: "Pawn: Two Hits to Remove",
+    description: "Your pawns require 2 captures to be removed from the board",
+    pieceType: "pawn" as PieceType,
+  },
+  {
+    key: "pawn_explosion",
+    label: "Pawn: Explosion on Capture",
+    description: "When your pawn captures, it explodes — removing all adjacent pieces",
+    pieceType: "pawn" as PieceType,
+  },
+  {
+    key: "pawn_double_push",
+    label: "Pawn: Always Double Push",
+    description: "Your pawns can always push 2 squares forward, regardless of rank",
+    pieceType: "pawn" as PieceType,
+  },
+  // ── Knight ────────────────────────────────────────────────────────────────
   {
     key: "knight_long_jump",
     label: "Knight: 4×1 Jump",
@@ -15,6 +35,7 @@ export const AUGMENTS = [
     description: "After a knight captures, move it a second time",
     pieceType: "knight" as PieceType,
   },
+  // ── Bishop ────────────────────────────────────────────────────────────────
   {
     key: "bishop_phase",
     label: "Bishop: Phase Through One Piece",
@@ -27,6 +48,33 @@ export const AUGMENTS = [
     description: "After a non-capturing bishop move, move it again",
     pieceType: "bishop" as PieceType,
   },
+  // ── Rook ──────────────────────────────────────────────────────────────────
+  {
+    key: "rook_triple_move_bonus",
+    label: "Rook: Long Move Bonus",
+    description: "Moving your rook 3+ squares grants it a free bonus move",
+    pieceType: "rook" as PieceType,
+  },
+  {
+    key: "rook_pawn_shield",
+    label: "Rook: Pawn Shield",
+    description: "Enemy pawns cannot capture your rook",
+    pieceType: "rook" as PieceType,
+  },
+  // ── Queen ─────────────────────────────────────────────────────────────────
+  {
+    key: "queen_teleport",
+    label: "Queen: Teleport",
+    description: "Once per game, teleport your queen to any empty square",
+    pieceType: "queen" as PieceType,
+  },
+  {
+    key: "queen_pawn_shield",
+    label: "Queen: Pawn Shield",
+    description: "Enemy pawns cannot capture your queen",
+    pieceType: "queen" as PieceType,
+  },
+  // ── King ──────────────────────────────────────────────────────────────────
   {
     key: "king_stride",
     label: "King: Stride",
@@ -36,12 +84,12 @@ export const AUGMENTS = [
   {
     key: "king_guard",
     label: "King: Guard Zone",
-    description: "The 4 squares orthogonally adjacent to your king are blocked",
+    description: "The 4 squares orthogonally adjacent to your king are blocked to the opponent",
     pieceType: "king" as PieceType,
   },
 ] as const;
 
-export type PieceType = "knight" | "bishop" | "king";
+export type PieceType = "pawn" | "knight" | "bishop" | "rook" | "queen" | "king";
 export type AugmentKey = (typeof AUGMENTS)[number]["key"];
 export type Augment = (typeof AUGMENTS)[number];
 
@@ -344,8 +392,13 @@ export default function AugmentDraftPopup({
 
 // ─── DraftOption ──────────────────────────────────────────────────────────────
 
-const PIECE_EMOJI: Record<PieceType, string> = { knight: "♞", bishop: "♝", king: "♚" };
-const PIECE_COLOR: Record<PieceType, string> = { knight: "#6ee7b7", bishop: "#93c5fd", king: "#fde68a" };
+const PIECE_EMOJI: Record<PieceType, string> = {
+  pawn: "♟", knight: "♞", bishop: "♝", rook: "♜", queen: "♛", king: "♚",
+};
+const PIECE_COLOR: Record<PieceType, string> = {
+  pawn: "#fb923c", knight: "#6ee7b7", bishop: "#93c5fd",
+  rook: "#c084fc", queen: "#f472b6", king: "#fde68a",
+};
 
 function DraftOption({ aug, selected, onClick }: { aug: Augment; selected: boolean; onClick: () => void }) {
   return (

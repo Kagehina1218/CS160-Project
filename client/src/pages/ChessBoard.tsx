@@ -39,8 +39,10 @@ type SideAugments = { white: AugmentMap; black: AugmentMap };
 // -------------------------
 
 /**
- * Returns the PieceType if a white knight / bishop / king sits on `square`
- * in the given FEN. Returns null for all other pieces or if out of range.
+ * Returns the PieceType for whichever white piece sits on `square` in the
+ * given FEN. Returns null for black pieces, empty squares, or out-of-range.
+ * Covers all 6 piece types so augment consumption works for pawn, rook, and
+ * queen augments that are now part of the draft pool.
  */
 function pieceTypeFromFenSquare(fen: string, square: string): PieceType | null {
   const fenBoard = fen.split(" ")[0];
@@ -56,11 +58,15 @@ function pieceTypeFromFenSquare(fen: string, square: string): PieceType | null {
       col += parseInt(ch, 10);
     } else {
       if (col === file) {
+        // Uppercase = white pieces
         switch (ch) {
+          case "P": return "pawn";
           case "N": return "knight";
           case "B": return "bishop";
+          case "R": return "rook";
+          case "Q": return "queen";
           case "K": return "king";
-          default:  return null;
+          default:  return null; // black piece or unexpected char
         }
       }
       col++;

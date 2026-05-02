@@ -16,29 +16,36 @@ type AugmentPanelProps = {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const PIECE_EMOJI: Record<PieceType, string>  = { knight: "♞", bishop: "♝", king: "♚" };
-const PIECE_COLOR: Record<PieceType, string>  = { knight: "#6ee7b7", bishop: "#93c5fd", king: "#fde68a" };
-const PIECE_LABEL: Record<PieceType, string>  = { knight: "Knight", bishop: "Bishop", king: "King" };
-
-// Non-draft augments available only via dev panel
-const DEV_ONLY_AUGMENTS: Record<string, { label: string; group: string }> = {
-  pawn_two_hits:          { label: "Pawn: 2 Hits to Remove",       group: "Pawn"  },
-  pawn_explosion:         { label: "Pawn: Explosion on Capture",    group: "Pawn"  },
-  pawn_double_push:       { label: "Pawn: Always Double Push",      group: "Pawn"  },
-  rook_triple_move_bonus: { label: "Rook: 3+ Squares → Bonus Move", group: "Rook"  },
-  rook_pawn_shield:       { label: "Rook: Pawn Shield",             group: "Rook"  },
-  queen_teleport:         { label: "Queen: Teleport (Once)",        group: "Queen" },
-  queen_pawn_shield:      { label: "Queen: Pawn Shield",            group: "Queen" },
+const PIECE_EMOJI: Record<PieceType, string> = {
+  pawn: "♟", knight: "♞", bishop: "♝", rook: "♜", queen: "♛", king: "♚",
+};
+const PIECE_COLOR: Record<PieceType, string> = {
+  pawn: "#fb923c", knight: "#6ee7b7", bishop: "#93c5fd",
+  rook: "#c084fc", queen: "#f472b6", king: "#fde68a",
 };
 
-const DEV_DRAFT_AUGMENTS = [
+/**
+ * All draftable augments grouped for the Dev panel.
+ * Mirrors AUGMENTS in AugmentDraftPopup exactly — every augment is now
+ * draftable, so there is no separate "dev-only" list.
+ */
+const ALL_AUGMENTS_BY_GROUP: { key: string; label: string; group: string }[] = [
+  { key: "pawn_two_hits",                    label: "Pawn: Two Hits to Remove",         group: "Pawn"   },
+  { key: "pawn_explosion",                   label: "Pawn: Explosion on Capture",       group: "Pawn"   },
+  { key: "pawn_double_push",                 label: "Pawn: Always Double Push",         group: "Pawn"   },
   { key: "knight_long_jump",                 label: "Knight: 4×1 Jump",                group: "Knight" },
   { key: "knight_second_move_after_capture", label: "Knight: Move Again After Capture", group: "Knight" },
   { key: "bishop_phase",                     label: "Bishop: Phase Through One Piece",  group: "Bishop" },
   { key: "bishop_double_move",               label: "Bishop: Double Move",              group: "Bishop" },
+  { key: "rook_triple_move_bonus",           label: "Rook: Long Move Bonus",            group: "Rook"   },
+  { key: "rook_pawn_shield",                 label: "Rook: Pawn Shield",                group: "Rook"   },
+  { key: "queen_teleport",                   label: "Queen: Teleport",                  group: "Queen"  },
+  { key: "queen_pawn_shield",                label: "Queen: Pawn Shield",               group: "Queen"  },
   { key: "king_stride",                      label: "King: Stride (2 Squares)",         group: "King"   },
   { key: "king_guard",                       label: "King: Guard Zone",                 group: "King"   },
 ];
+
+const DEV_GROUPS = ["Pawn", "Knight", "Bishop", "Rook", "Queen", "King"] as const;
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
@@ -138,48 +145,29 @@ export default function AugmentPanel({
             Directly toggle augments for testing. Changes bypass the draft system.
           </p>
 
-          {/* Draft-system augments */}
-          <DevGroup label="Knight">
-            {DEV_DRAFT_AUGMENTS.filter((a) => a.group === "Knight").map((a) => (
-              <DevToggle key={a.key} label={a.label} side="white" augKey={a.key} activeAugments={activeAugments} onToggle={onToggleAugment} />
-            ))}
-          </DevGroup>
-          <DevGroup label="Bishop">
-            {DEV_DRAFT_AUGMENTS.filter((a) => a.group === "Bishop").map((a) => (
-              <DevToggle key={a.key} label={a.label} side="white" augKey={a.key} activeAugments={activeAugments} onToggle={onToggleAugment} />
-            ))}
-          </DevGroup>
-          <DevGroup label="King">
-            {DEV_DRAFT_AUGMENTS.filter((a) => a.group === "King").map((a) => (
-              <DevToggle key={a.key} label={a.label} side="white" augKey={a.key} activeAugments={activeAugments} onToggle={onToggleAugment} />
-            ))}
-          </DevGroup>
-
-          {/* Other augments */}
-          {["Pawn", "Rook", "Queen"].map((grp) => (
-            <DevGroup key={grp} label={grp}>
-              {Object.entries(DEV_ONLY_AUGMENTS)
-                .filter(([, v]) => v.group === grp)
-                .map(([key, v]) => (
-                  <DevToggle key={key} label={v.label} side="white" augKey={key} activeAugments={activeAugments} onToggle={onToggleAugment} />
+          <p style={{ fontSize: "0.68rem", color: "#334155", margin: "0 0 8px", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" }}>White</p>
+          {DEV_GROUPS.map((grp) => {
+            const items = ALL_AUGMENTS_BY_GROUP.filter((a) => a.group === grp);
+            return (
+              <DevGroup key={grp} label={grp}>
+                {items.map((a) => (
+                  <DevToggle key={a.key} label={a.label} side="white" augKey={a.key} activeAugments={activeAugments} onToggle={onToggleAugment} />
                 ))}
-            </DevGroup>
-          ))}
+              </DevGroup>
+            );
+          })}
 
           <hr style={{ margin: "12px 0", borderColor: "#1f2d40" }} />
-          <p style={{ fontSize: "0.7rem", color: "#334155", marginTop: 0, marginBottom: 8 }}>Black augments</p>
-          {["Knight", "Bishop", "King", "Pawn", "Rook", "Queen"].map((grp) => {
-            const items = [
-              ...DEV_DRAFT_AUGMENTS.filter((a) => a.group === grp),
-              ...Object.entries(DEV_ONLY_AUGMENTS).filter(([, v]) => v.group === grp).map(([key, v]) => ({ key, label: v.label })),
-            ];
-            return items.length ? (
+          <p style={{ fontSize: "0.68rem", color: "#334155", margin: "0 0 8px", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" }}>Black</p>
+          {DEV_GROUPS.map((grp) => {
+            const items = ALL_AUGMENTS_BY_GROUP.filter((a) => a.group === grp);
+            return (
               <DevGroup key={grp} label={grp}>
                 {items.map((a) => (
                   <DevToggle key={a.key} label={a.label} side="black" augKey={a.key} activeAugments={activeAugments} onToggle={onToggleAugment} />
                 ))}
               </DevGroup>
-            ) : null;
+            );
           })}
         </div>
       )}
