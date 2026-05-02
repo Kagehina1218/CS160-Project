@@ -87,8 +87,8 @@ def get_stockfish_move(board):
 
 def get_ai_move(board, difficulty):
     if difficulty == "easy":
-        return get_best_move(board, depth=2)
+        return get_best_move(board, depth=1)
     elif difficulty == "medium":
-        return get_best_move(board, depth=4)
+        return get_best_move(board, depth=2)
     else:
         return get_stockfish_move(board)
