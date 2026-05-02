@@ -107,7 +107,6 @@ def is_pawn_shield_blocked(board: chess.Board, move: chess.Move, side_augments: 
 
     return False
 
-
 # -------------------------
 # Knight Augment Helpers
 # -------------------------

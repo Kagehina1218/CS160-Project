@@ -3,7 +3,7 @@ import { Chessboard } from "react-chessboard";
 import { useAuth } from "@clerk/react";
 import { useNavigate } from "react-router-dom";
 import AugmentPanel from "../components/AugmentPanel";
-import AugmentDraftPopup from "../components/AugmentPopup"; // FROM FILE 2
+import AugmentDraftPopup, { type OwnedAugment, type PieceType } from "../components/AugmentPopup";
 
 // -------------------------
 // Types
@@ -35,7 +35,50 @@ type AugmentMap = Record<string, boolean>;
 type SideAugments = { white: AugmentMap; black: AugmentMap };
 
 // -------------------------
-// Styles injected once
+// Utility: piece type from FEN + source square
+// -------------------------
+
+/**
+ * Returns the PieceType if a white knight / bishop / king sits on `square`
+ * in the given FEN. Returns null for all other pieces or if out of range.
+ */
+function pieceTypeFromFenSquare(fen: string, square: string): PieceType | null {
+  const fenBoard = fen.split(" ")[0];
+  const ranks    = fenBoard.split("/");
+
+  const file = square.charCodeAt(0) - "a".charCodeAt(0); // 0-7
+  const rank = parseInt(square[1], 10) - 1;               // 0-7
+  const fenRank = ranks[7 - rank];
+
+  let col = 0;
+  for (const ch of fenRank) {
+    if (ch >= "1" && ch <= "8") {
+      col += parseInt(ch, 10);
+    } else {
+      if (col === file) {
+        switch (ch) {
+          case "N": return "knight";
+          case "B": return "bishop";
+          case "K": return "king";
+          default:  return null;
+        }
+      }
+      col++;
+    }
+  }
+  return null;
+}
+
+function squareIndexToName(index: number): string | null {
+  const files = ["a","b","c","d","e","f","g","h"];
+  const file  = index % 8;
+  const rank  = Math.floor(index / 8);
+  if (file < 0 || file > 7 || rank < 0 || rank > 7) return null;
+  return `${files[file]}${rank + 1}`;
+}
+
+// -------------------------
+// Styles
 // -------------------------
 const STYLES = `
   @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Pro:ital,wght@0,300;0,400;1,300&display=swap');
@@ -63,12 +106,7 @@ const STYLES = `
     z-index: 0;
   }
 
-  .chess-header {
-    text-align: center;
-    margin-bottom: 20px;
-    position: relative;
-    z-index: 1;
-  }
+  .chess-header { text-align: center; margin-bottom: 20px; position: relative; z-index: 1; }
 
   .chess-title {
     font-family: 'Cinzel', serif;
@@ -82,353 +120,61 @@ const STYLES = `
     filter: drop-shadow(0 0 20px rgba(226,201,126,0.25));
   }
 
-  .chess-subtitle {
-    font-family: 'Crimson Pro', serif;
-    font-style: italic;
-    color: #64748b;
-    font-size: 1rem;
-    letter-spacing: 0.08em;
-  }
+  .chess-subtitle { font-family: 'Crimson Pro', serif; font-style: italic; color: #64748b; font-size: 1rem; letter-spacing: 0.08em; }
 
-  .difficulty-row {
-    display: flex;
-    gap: 10px;
-    justify-content: center;
-    margin-bottom: 20px;
-    position: relative;
-    z-index: 1;
-  }
+  .difficulty-row { display: flex; gap: 10px; justify-content: center; margin-bottom: 20px; position: relative; z-index: 1; }
+  .diff-btn { font-family: 'Cinzel', serif; font-size: 0.78rem; font-weight: 600; letter-spacing: 0.1em; padding: 9px 22px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04); color: #64748b; cursor: pointer; transition: all 0.22s ease; text-transform: uppercase; }
+  .diff-btn:hover { border-color: rgba(226,201,126,0.3); color: #e2c97e; background: rgba(226,201,126,0.06); }
+  .diff-btn.active { background: linear-gradient(135deg, rgba(226,201,126,0.2), rgba(196,160,70,0.15)); border-color: rgba(226,201,126,0.55); color: #f5e6b2; box-shadow: 0 0 18px rgba(226,201,126,0.15), inset 0 1px 0 rgba(255,255,255,0.08); }
 
-  .diff-btn {
-    font-family: 'Cinzel', serif;
-    font-size: 0.78rem;
-    font-weight: 600;
-    letter-spacing: 0.1em;
-    padding: 9px 22px;
-    border-radius: 8px;
-    border: 1px solid rgba(255,255,255,0.1);
-    background: rgba(255,255,255,0.04);
-    color: #64748b;
-    cursor: pointer;
-    transition: all 0.22s ease;
-    text-transform: uppercase;
-  }
+  .main-arena { display: flex; align-items: flex-start; gap: 20px; position: relative; z-index: 1; width: 100%; max-width: 1200px; justify-content: center; }
 
-  .diff-btn:hover {
-    border-color: rgba(226,201,126,0.3);
-    color: #e2c97e;
-    background: rgba(226,201,126,0.06);
-  }
-
-  .diff-btn.active {
-    background: linear-gradient(135deg, rgba(226,201,126,0.2), rgba(196,160,70,0.15));
-    border-color: rgba(226,201,126,0.55);
-    color: #f5e6b2;
-    box-shadow: 0 0 18px rgba(226,201,126,0.15), inset 0 1px 0 rgba(255,255,255,0.08);
-  }
-
-  .main-arena {
-    display: flex;
-    align-items: flex-start;
-    gap: 20px;
-    position: relative;
-    z-index: 1;
-    width: 100%;
-    max-width: 1200px;
-    justify-content: center;
-  }
-
-  /* ---- Move history ---- */
-  .history-panel {
-    width: 190px;
-    flex-shrink: 0;
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 16px;
-    padding: 16px;
-    backdrop-filter: blur(12px);
-    max-height: 560px;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .history-title {
-    font-family: 'Cinzel', serif;
-    font-size: 0.65rem;
-    letter-spacing: 0.18em;
-    color: #e2c97e;
-    margin: 0 0 12px;
-    text-transform: uppercase;
-  }
-
-  .history-head {
-    display: grid;
-    grid-template-columns: 22px 1fr 1fr;
-    gap: 4px;
-    padding-bottom: 6px;
-    border-bottom: 1px solid rgba(255,255,255,0.06);
-    margin-bottom: 6px;
-    font-family: 'Cinzel', serif;
-    font-size: 0.62rem;
-    color: #475569;
-    letter-spacing: 0.08em;
-  }
-
-  .history-scroll {
-    overflow-y: auto;
-    flex: 1;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(226,201,126,0.2) transparent;
-  }
-
-  .history-row {
-    display: grid;
-    grid-template-columns: 22px 1fr 1fr;
-    gap: 4px;
-    padding: 3px 0;
-    border-bottom: 1px solid rgba(255,255,255,0.03);
-  }
-
+  .history-panel { width: 190px; flex-shrink: 0; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: 16px; padding: 16px; backdrop-filter: blur(12px); max-height: 560px; display: flex; flex-direction: column; }
+  .history-title { font-family: 'Cinzel', serif; font-size: 0.65rem; letter-spacing: 0.18em; color: #e2c97e; margin: 0 0 12px; text-transform: uppercase; }
+  .history-head { display: grid; grid-template-columns: 22px 1fr 1fr; gap: 4px; padding-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.06); margin-bottom: 6px; font-family: 'Cinzel', serif; font-size: 0.62rem; color: #475569; letter-spacing: 0.08em; }
+  .history-scroll { overflow-y: auto; flex: 1; scrollbar-width: thin; scrollbar-color: rgba(226,201,126,0.2) transparent; }
+  .history-row { display: grid; grid-template-columns: 22px 1fr 1fr; gap: 4px; padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,0.03); }
   .history-num { color: #334155; font-size: 0.75rem; }
   .history-white { color: #f1f5f9; font-size: 0.8rem; font-family: 'Courier New', monospace; }
   .history-black { color: #94a3b8; font-size: 0.8rem; font-family: 'Courier New', monospace; }
   .history-empty { color: #2d3748; font-style: italic; font-size: 0.78rem; }
 
-  /* ---- Board column ---- */
-  .board-column {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0;
-  }
-
-  .board-topbar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    width: 480px;
-    margin-bottom: 10px;
-  }
-
-  .status-text {
-    font-family: 'Crimson Pro', serif;
-    font-style: italic;
-    font-size: 1.1rem;
-    color: #94a3b8;
-    min-height: 1.4em;
-    transition: color 0.3s ease;
-  }
-
+  .board-column { display: flex; flex-direction: column; align-items: center; gap: 0; }
+  .board-topbar { display: flex; justify-content: space-between; align-items: center; width: 480px; margin-bottom: 10px; }
+  .status-text { font-family: 'Crimson Pro', serif; font-style: italic; font-size: 1.1rem; color: #94a3b8; min-height: 1.4em; transition: color 0.3s ease; }
   .status-text.alert { color: #fbbf24; }
+  .board-controls { display: flex; gap: 8px; align-items: center; }
 
-  .board-controls {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    position: relative;
-  }
+  .ctrl-btn { font-family: 'Cinzel', serif; font-size: 0.7rem; letter-spacing: 0.08em; padding: 8px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04); color: #94a3b8; cursor: pointer; transition: all 0.2s ease; text-transform: uppercase; }
+  .ctrl-btn:hover { border-color: rgba(255,255,255,0.2); color: #f1f5f9; background: rgba(255,255,255,0.08); }
+  .ctrl-btn.danger { border-color: rgba(239,68,68,0.3); color: #f87171; background: rgba(239,68,68,0.07); }
+  .ctrl-btn.danger:hover { border-color: rgba(239,68,68,0.6); background: rgba(239,68,68,0.15); }
 
-  .ctrl-btn {
-    font-family: 'Cinzel', serif;
-    font-size: 0.7rem;
-    letter-spacing: 0.08em;
-    padding: 8px 14px;
-    border-radius: 8px;
-    border: 1px solid rgba(255,255,255,0.1);
-    background: rgba(255,255,255,0.04);
-    color: #94a3b8;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    text-transform: uppercase;
-  }
+  .board-wrapper { position: relative; border-radius: 12px; overflow: hidden; box-shadow: 0 0 0 1px rgba(226,201,126,0.12), 0 30px 80px rgba(0,0,0,0.7), 0 0 60px rgba(99,102,241,0.06); }
 
-  .ctrl-btn:hover {
-    border-color: rgba(255,255,255,0.2);
-    color: #f1f5f9;
-    background: rgba(255,255,255,0.08);
-  }
+  .board-lock-dim { position: absolute; inset: 0; background: rgba(0,0,0,0.45); backdrop-filter: blur(1px); z-index: 8; pointer-events: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
+  .board-lock-label { font-family: 'Cinzel', serif; font-size: 0.75rem; letter-spacing: 0.18em; color: rgba(226,201,126,0.75); text-transform: uppercase; text-shadow: 0 0 12px rgba(226,201,126,0.4); }
 
-  .ctrl-btn.danger {
-    border-color: rgba(239,68,68,0.3);
-    color: #f87171;
-    background: rgba(239,68,68,0.07);
-  }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-top: 14px; width: 480px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-family: 'Crimson Pro', serif; font-size: 0.82rem; color: #64748b; letter-spacing: 0.02em; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 
-  .ctrl-btn.danger:hover {
-    border-color: rgba(239,68,68,0.6);
-    background: rgba(239,68,68,0.15);
-  }
-
-  /* ---- Board wrapper ---- */
-  .board-wrapper {
-    position: relative;
-    border-radius: 12px;
-    overflow: hidden;
-    box-shadow:
-      0 0 0 1px rgba(226,201,126,0.12),
-      0 30px 80px rgba(0,0,0,0.7),
-      0 0 60px rgba(99,102,241,0.06);
-  }
-
-  /* ---- Board lock dim overlay ---- */
-  .board-lock-dim {
-    position: absolute;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.45);
-    backdrop-filter: blur(1px);
-    z-index: 8;
-    pointer-events: none;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-  }
-
-  .board-lock-label {
-    font-family: 'Cinzel', serif;
-    font-size: 0.75rem;
-    letter-spacing: 0.18em;
-    color: rgba(226,201,126,0.75);
-    text-transform: uppercase;
-    text-shadow: 0 0 12px rgba(226,201,126,0.4);
-  }
-
-  /* ---- Legend ---- */
-  .legend {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 14px;
-    justify-content: center;
-    margin-top: 14px;
-    width: 480px;
-  }
-
-  .legend-item {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-family: 'Crimson Pro', serif;
-    font-size: 0.82rem;
-    color: #64748b;
-    letter-spacing: 0.02em;
-  }
-
-  .legend-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
-
-  /* ---- Overlays ---- */
-  .board-overlay {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    z-index: 20;
-    text-align: center;
-    padding: 30px;
-  }
-
-  .overlay-gameover {
-    background: linear-gradient(135deg, rgba(5,8,16,0.92), rgba(10,15,30,0.95));
-    backdrop-filter: blur(8px);
-  }
-
-  .overlay-forfeit {
-    background: linear-gradient(135deg, rgba(15,5,5,0.93), rgba(30,5,5,0.95));
-    backdrop-filter: blur(8px);
-  }
-
-  .overlay-title {
-    font-family: 'Cinzel', serif;
-    font-size: 2rem;
-    font-weight: 700;
-    margin: 0 0 8px;
-    background: linear-gradient(135deg, #e2c97e, #f5e6b2);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
-
-  .overlay-sub {
-    font-family: 'Crimson Pro', serif;
-    font-style: italic;
-    color: #64748b;
-    margin: 0 0 28px;
-    font-size: 1rem;
-  }
-
+  .board-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 20; text-align: center; padding: 30px; }
+  .overlay-gameover { background: linear-gradient(135deg, rgba(5,8,16,0.92), rgba(10,15,30,0.95)); backdrop-filter: blur(8px); }
+  .overlay-forfeit { background: linear-gradient(135deg, rgba(15,5,5,0.93), rgba(30,5,5,0.95)); backdrop-filter: blur(8px); }
+  .overlay-title { font-family: 'Cinzel', serif; font-size: 2rem; font-weight: 700; margin: 0 0 8px; background: linear-gradient(135deg, #e2c97e, #f5e6b2); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .overlay-sub { font-family: 'Crimson Pro', serif; font-style: italic; color: #64748b; margin: 0 0 28px; font-size: 1rem; }
   .overlay-sub.danger { color: #f87171; }
+  .overlay-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .overlay-btn { font-family: 'Cinzel', serif; font-size: 0.72rem; letter-spacing: 0.1em; padding: 11px 22px; border-radius: 10px; border: 1px solid rgba(226,201,126,0.3); background: rgba(226,201,126,0.08); color: #e2c97e; cursor: pointer; text-transform: uppercase; transition: all 0.2s ease; }
+  .overlay-btn:hover { background: rgba(226,201,126,0.18); border-color: rgba(226,201,126,0.55); box-shadow: 0 0 20px rgba(226,201,126,0.12); }
+  .overlay-btn.red { border-color: rgba(239,68,68,0.4); background: rgba(239,68,68,0.1); color: #f87171; }
+  .overlay-btn.red:hover { background: rgba(239,68,68,0.22); border-color: rgba(239,68,68,0.65); }
+  .overlay-btn.ghost { border-color: rgba(255,255,255,0.1); background: transparent; color: #64748b; }
+  .overlay-btn.ghost:hover { background: rgba(255,255,255,0.06); color: #94a3b8; }
 
-  .overlay-actions {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-    justify-content: center;
-  }
+  .error-banner { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #f87171; padding: 10px 18px; border-radius: 10px; margin-bottom: 14px; font-family: 'Crimson Pro', serif; font-size: 0.92rem; max-width: 480px; text-align: center; }
 
-  .overlay-btn {
-    font-family: 'Cinzel', serif;
-    font-size: 0.72rem;
-    letter-spacing: 0.1em;
-    padding: 11px 22px;
-    border-radius: 10px;
-    border: 1px solid rgba(226,201,126,0.3);
-    background: rgba(226,201,126,0.08);
-    color: #e2c97e;
-    cursor: pointer;
-    text-transform: uppercase;
-    transition: all 0.2s ease;
-  }
-
-  .overlay-btn:hover {
-    background: rgba(226,201,126,0.18);
-    border-color: rgba(226,201,126,0.55);
-    box-shadow: 0 0 20px rgba(226,201,126,0.12);
-  }
-
-  .overlay-btn.red {
-    border-color: rgba(239,68,68,0.4);
-    background: rgba(239,68,68,0.1);
-    color: #f87171;
-  }
-
-  .overlay-btn.red:hover {
-    background: rgba(239,68,68,0.22);
-    border-color: rgba(239,68,68,0.65);
-    box-shadow: 0 0 20px rgba(239,68,68,0.15);
-  }
-
-  .overlay-btn.ghost {
-    border-color: rgba(255,255,255,0.1);
-    background: transparent;
-    color: #64748b;
-  }
-
-  .overlay-btn.ghost:hover {
-    background: rgba(255,255,255,0.06);
-    color: #94a3b8;
-  }
-
-  /* ---- Error banner ---- */
-  .error-banner {
-    background: rgba(239,68,68,0.1);
-    border: 1px solid rgba(239,68,68,0.3);
-    color: #f87171;
-    padding: 10px 18px;
-    border-radius: 10px;
-    margin-bottom: 14px;
-    font-family: 'Crimson Pro', serif;
-    font-size: 0.92rem;
-    max-width: 480px;
-    text-align: center;
-  }
-
-  /* ---- Timer ---- */
   .timer-toggle-row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 14px; width: 480px; }
   .timer-opt-btn { font-family: 'Cinzel', serif; font-size: 0.68rem; letter-spacing: 0.09em; padding: 7px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.04); color: #94a3b8; cursor: pointer; transition: all 0.2s ease; text-transform: uppercase; }
   .timer-opt-btn:hover { border-color: rgba(226,201,126,0.25); color: #e2c97e; }
@@ -443,51 +189,28 @@ const STYLES = `
   .timer-digits.low { color: #f87171; }
   .timer-divider { font-family: 'Cinzel', serif; font-size: 0.7rem; color: #64748b; letter-spacing: 0.1em; }
 
-  /* ---- Turn indicator ---- */
-  .turn-indicator {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 14px;
-  }
-
-  .turn-pip {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    transition: all 0.35s ease;
-  }
-
-  .turn-label {
-    font-family: 'Cinzel', serif;
-    font-size: 0.7rem;
-    letter-spacing: 0.12em;
-    color: #475569;
-    text-transform: uppercase;
-  }
+  .turn-indicator { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+  .turn-pip { width: 8px; height: 8px; border-radius: 50%; transition: all 0.35s ease; }
+  .turn-label { font-family: 'Cinzel', serif; font-size: 0.7rem; letter-spacing: 0.12em; color: #475569; text-transform: uppercase; }
 `;
 
 // -------------------------
 // Move History Panel
 // -------------------------
 function MoveHistoryPanel({ history }: { history: MoveEntry[] }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollRef  = useRef<HTMLDivElement>(null);
   const whiteMoves = history.filter((m) => m.side === "white");
   const blackMoves = history.filter((m) => m.side === "black");
   const rowCount   = Math.max(whiteMoves.length, blackMoves.length);
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [history.length]);
 
   return (
     <div className="history-panel">
       <div className="history-title">Move History</div>
-      <div className="history-head">
-        <span>#</span><span>White</span><span>Black</span>
-      </div>
+      <div className="history-head"><span>#</span><span>White</span><span>Black</span></div>
       <div className="history-scroll" ref={scrollRef}>
         {rowCount === 0 ? (
           <div className="history-empty" style={{ paddingTop: "6px" }}>No moves yet.</div>
@@ -510,36 +233,55 @@ function MoveHistoryPanel({ history }: { history: MoveEntry[] }) {
 // -------------------------
 export default function ChessBoard() {
   const { getToken } = useAuth();
-  const navigate    = useNavigate();
+  const navigate     = useNavigate();
 
   // Core game state
-  const [position, setPosition]             = useState<string>("start");
-  const [status, setStatus]                 = useState<string>("");
-  const [difficulty, setDifficulty]         = useState<string>("medium");
-  const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
-  const [gameOverMessage, setGameOverMessage] = useState<string>("");
-  const [isGameOver, setIsGameOver]           = useState<boolean>(false);
+  const [position, setPosition]                   = useState<string>("start");
+  const [status, setStatus]                       = useState<string>("");
+  const [difficulty, setDifficulty]               = useState<string>("medium");
+  const [selectedSquare, setSelectedSquare]       = useState<string | null>(null);
+  const [gameOverMessage, setGameOverMessage]     = useState<string>("");
+  const [isGameOver, setIsGameOver]               = useState<boolean>(false);
   const [showGameOverOverlay, setShowGameOverOverlay] = useState<boolean>(false);
   const [showForfeitConfirm, setShowForfeitConfirm]   = useState<boolean>(false);
-  const [activeAugments, setActiveAugments] = useState<SideAugments>({ white: {}, black: {} });
-  const [turnCount, setTurnCount]           = useState<number>(0);
-  const [currentTurn, setCurrentTurn]       = useState<"white" | "black">("white");
-  const [moveHistory, setMoveHistory]       = useState<MoveEntry[]>([]);
-  const [boardError, setBoardError]         = useState<string>("");
+  const [activeAugments, setActiveAugments]       = useState<SideAugments>({ white: {}, black: {} });
+  const [turnCount, setTurnCount]                 = useState<number>(0);
+  const [currentTurn, setCurrentTurn]             = useState<"white" | "black">("white");
+  const [moveHistory, setMoveHistory]             = useState<MoveEntry[]>([]);
+  const [boardError, setBoardError]               = useState<string>("");
   const [highlightedSquares, setHighlightedSquares] = useState<LegalMoveEntry[]>([]);
   const [blockedSquares, setBlockedSquares]         = useState<BlockedMoveEntry[]>([]);
   const [damagedPawns, setDamagedPawns]             = useState<number[]>([]);
   const [queenTeleportUsed, setQueenTeleportUsed]   = useState<{ white: boolean; black: boolean }>({ white: false, black: false });
+  const [boardLocked, setBoardLocked]               = useState<boolean>(false);
 
-  // FROM FILE 2: Board lock for augment draft turns
-  const [boardLocked, setBoardLocked] = useState<boolean>(false);
+  /**
+   * The full augment collection — kept here so both AugmentDraftPopup
+   * (which mutates it) and AugmentPanel (which displays it) share one source.
+   * AugmentDraftPopup owns the write side; we receive updates via onCollectionChange.
+   */
+  const [ownedCollection, setOwnedCollection] = useState<OwnedAugment[]>([]);
+
+  /**
+   * Piece type of the last white move.
+   * Updated in onDrop (pre-move FEN lookup) and passed to AugmentDraftPopup
+   * so it can spend the matching held augment.
+   */
+  const [lastWhiteMovedPieceType, setLastWhiteMovedPieceType] = useState<PieceType | null>(null);
+
+  /**
+   * Snapshot of the FEN BEFORE the most recent move — needed to identify
+   * which piece is on the source square, since the post-move FEN has already
+   * updated the board.
+   */
+  const preMovePositionRef = useRef<string>("start");
 
   // Timer state
-  const [timerMode, setTimerMode] = useState<"none" | "1" | "3" | "5" | "10">("none");
-  const [whiteTime, setWhiteTime] = useState<number>(0);
-  const [blackTime, setBlackTime] = useState<number>(0);
+  const [timerMode, setTimerMode]       = useState<"none" | "1" | "3" | "5" | "10">("none");
+  const [whiteTime, setWhiteTime]       = useState<number>(0);
+  const [blackTime, setBlackTime]       = useState<number>(0);
   const [timerRunning, setTimerRunning] = useState<boolean>(false);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const intervalRef                     = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // -------------------------
   // Auth
@@ -585,8 +327,8 @@ export default function ChessBoard() {
   const applyResponse = useCallback((data: MoveResponse) => {
     setPosition(data.fen);
     if (data.turn_count !== undefined) setTurnCount(data.turn_count);
-    if (data.move_history) setMoveHistory(data.move_history);
-    if (data.damaged_pawns) setDamagedPawns(data.damaged_pawns);
+    if (data.move_history)    setMoveHistory(data.move_history);
+    if (data.damaged_pawns)   setDamagedPawns(data.damaged_pawns);
     if (data.queen_teleport_used) setQueenTeleportUsed(data.queen_teleport_used);
     if (data.turn) setCurrentTurn(data.turn as "white" | "black");
     if (!handleGameOverStatus(data)) setStatus(data.message ?? "");
@@ -597,7 +339,7 @@ export default function ChessBoard() {
   // -------------------------
   const fetchAugments = useCallback(async () => {
     try {
-      const h = await authHeaders();
+      const h   = await authHeaders();
       const res = await fetch("/api/augments", { headers: h });
       const data = await res.json() as { status: string; active_augments?: SideAugments };
       if (data.status === "ok") setActiveAugments(data.active_augments ?? { white: {}, black: {} });
@@ -605,10 +347,9 @@ export default function ChessBoard() {
   }, [authHeaders]);
 
   const fetchLegalMoves = useCallback(async (square: string) => {
-    // FROM FILE 2: also block when boardLocked
     if (isGameOver || boardLocked) { clearHighlights(); return; }
     try {
-      const h = await authHeaders();
+      const h   = await authHeaders();
       const res = await fetch(`/api/legal-moves/${square}`, { headers: h });
       const data = await res.json() as {
         status: string; moves?: LegalMoveEntry[];
@@ -618,7 +359,7 @@ export default function ChessBoard() {
         if (handleGameOverStatus(data as MoveResponse)) { clearHighlights(); return; }
         const legal   = data.moves ?? [];
         const blocked = data.blocked_moves ?? [];
-        if (legal.length === 0 && blocked.length === 0) { clearHighlights(); }
+        if (legal.length === 0 && blocked.length === 0) clearHighlights();
         else { setSelectedSquare(square); setHighlightedSquares(legal); setBlockedSquares(blocked); }
         if (data.message) setStatus(data.message);
       }
@@ -627,7 +368,7 @@ export default function ChessBoard() {
 
   const toggleAugment = useCallback(async (side: "white" | "black", augmentName: string) => {
     try {
-      const h = await authHeaders();
+      const h   = await authHeaders();
       const res = await fetch("/api/augments", {
         method: "POST", headers: h,
         body: JSON.stringify({ side, augment: augmentName }),
@@ -637,42 +378,26 @@ export default function ChessBoard() {
     } catch (e) { console.error(e); }
   }, [authHeaders, clearHighlights]);
 
-  // FROM FILE 2: Disable all white augments after white's move resolves
-  const disableAllWhiteAugments = useCallback(async () => {
-    try {
-      const h = await authHeaders();
-      const res = await fetch("/api/augments", { headers: h });
-      const data = await res.json() as { status: string; active_augments?: SideAugments };
-      const currentWhite: AugmentMap = data.active_augments?.white ?? {};
-      for (const [aug, isOn] of Object.entries(currentWhite)) {
-        if (isOn) {
-          await fetch("/api/augments", {
-            method: "POST",
-            headers: h,
-            body: JSON.stringify({ side: "white", augment: aug }),
-          });
-        }
-      }
-    } catch (err) {
-      console.error("Failed to clear white augments:", err);
-    }
-  }, [authHeaders]);
-
   // -------------------------
   // Game actions
   // -------------------------
   const resetGame = useCallback(async () => {
     try {
-      const h = await authHeaders();
+      const h   = await authHeaders();
       const res = await fetch("/api/reset", { method: "POST", headers: h });
       const data = await res.json() as { fen: string };
-      setPosition(data.fen); setStatus(""); setIsGameOver(false);
+      setPosition(data.fen);
+      preMovePositionRef.current = data.fen;
+      setStatus(""); setIsGameOver(false);
       setGameOverMessage(""); setShowGameOverOverlay(false);
       setTurnCount(0); setMoveHistory([]); setDamagedPawns([]);
       setQueenTeleportUsed({ white: false, black: false });
       setCurrentTurn("white");
-      setBoardLocked(false); // FROM FILE 2
-      clearHighlights(); void fetchAugments();
+      setBoardLocked(false);
+      setLastWhiteMovedPieceType(null);
+      setOwnedCollection([]);   // ← reset collection on new game
+      clearHighlights();
+      void fetchAugments();
     } catch (e) { console.error(e); }
   }, [authHeaders, clearHighlights, fetchAugments]);
 
@@ -680,15 +405,19 @@ export default function ChessBoard() {
     try {
       const h = await authHeaders();
       await fetch("/api/difficulty", { method: "POST", headers: h, body: JSON.stringify({ difficulty: level }) });
-      const res = await fetch("/api/reset", { method: "POST", headers: h });
+      const res  = await fetch("/api/reset", { method: "POST", headers: h });
       const data = await res.json() as { fen: string };
-      setDifficulty(level); setPosition(data.fen);
+      setDifficulty(level);
+      setPosition(data.fen);
+      preMovePositionRef.current = data.fen;
       setStatus(`New game — ${level.charAt(0).toUpperCase() + level.slice(1)}`);
       setIsGameOver(false); setGameOverMessage(""); setShowGameOverOverlay(false);
       setTurnCount(0); setMoveHistory([]); setDamagedPawns([]);
       setQueenTeleportUsed({ white: false, black: false });
       setCurrentTurn("white");
-      setBoardLocked(false); // FROM FILE 2
+      setBoardLocked(false);
+      setLastWhiteMovedPieceType(null);
+      setOwnedCollection([]);   // ← reset collection on difficulty change
       clearHighlights();
     } catch (e) { console.error(e); }
   }, [authHeaders, clearHighlights]);
@@ -703,21 +432,28 @@ export default function ChessBoard() {
   }, [authHeaders]);
 
   const onDrop = useCallback((sourceSquare: string, targetSquare: string): boolean => {
-    // FROM FILE 2: also block when boardLocked
     if (isGameOver || boardLocked) return false;
+
+    // Identify piece type BEFORE the move (FEN changes after server responds)
+    const pieceType = pieceTypeFromFenSquare(preMovePositionRef.current, sourceSquare);
+
     void (async () => {
       try {
-        const h = await authHeaders();
+        const h   = await authHeaders();
         const res = await fetch("/api/move", {
           method: "POST", headers: h,
           body: JSON.stringify({ move: sourceSquare + targetSquare }),
         });
         const data = await res.json() as MoveResponse;
         if (data.status === "ok") {
+          preMovePositionRef.current = data.fen;
           applyResponse(data);
           clearHighlights();
-          // FROM FILE 2: clear white augments after each white move
-          await disableAllWhiteAugments();
+
+          // Tell AugmentDraftPopup which piece just moved so it can spend
+          // any matching held augment (even if the buff wasn't used).
+          if (pieceType) setLastWhiteMovedPieceType(pieceType);
+
           void fetchAugments();
         } else {
           setStatus(data.message ?? "Illegal move");
@@ -725,38 +461,29 @@ export default function ChessBoard() {
       } catch (e) { console.error(e); setStatus("Connection error"); }
     })();
     return true;
-  }, [isGameOver, boardLocked, authHeaders, applyResponse, clearHighlights, disableAllWhiteAugments, fetchAugments]);
+  }, [isGameOver, boardLocked, authHeaders, applyResponse, clearHighlights, fetchAugments]);
 
   // -------------------------
   // Timer logic
   // -------------------------
   const stopTimer = useCallback(() => {
     setTimerRunning(false);
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
+    if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
   }, []);
 
   const startTimer = useCallback((minutes: number) => {
     const seconds = minutes * 60;
-    setWhiteTime(seconds);
-    setBlackTime(seconds);
-    setTimerRunning(false);
+    setWhiteTime(seconds); setBlackTime(seconds); setTimerRunning(false);
   }, []);
 
   const applyTimerMode = useCallback((mode: "none" | "1" | "3" | "5" | "10") => {
-    setTimerMode(mode);
-    stopTimer();
+    setTimerMode(mode); stopTimer();
     if (mode === "none") { setWhiteTime(0); setBlackTime(0); return; }
     startTimer(Number(mode));
   }, [startTimer, stopTimer]);
 
-  const formatTime = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60).toString().padStart(2, "0");
-    const secs = (seconds % 60).toString().padStart(2, "0");
-    return `${mins}:${secs}`;
-  };
+  const formatTime = (s: number) =>
+    `${Math.floor(s / 60).toString().padStart(2, "0")}:${(s % 60).toString().padStart(2, "0")}`;
 
   const resetGameWithTimer = useCallback(async () => {
     await resetGame();
@@ -774,18 +501,14 @@ export default function ChessBoard() {
     }
     intervalRef.current = setInterval(() => {
       if (currentTurn === "white") {
-        setWhiteTime((time) => {
-          if (time <= 1) {
-            stopTimer(); setGameOverMessage("Time's up — Black wins!"); setStatus("Time's up — Black wins!"); setIsGameOver(true); setShowGameOverOverlay(true); return 0;
-          }
-          return time - 1;
+        setWhiteTime((t) => {
+          if (t <= 1) { stopTimer(); setGameOverMessage("Time's up — Black wins!"); setStatus("Time's up — Black wins!"); setIsGameOver(true); setShowGameOverOverlay(true); return 0; }
+          return t - 1;
         });
       } else {
-        setBlackTime((time) => {
-          if (time <= 1) {
-            stopTimer(); setGameOverMessage("Time's up — White wins!"); setStatus("Time's up — White wins!"); setIsGameOver(true); setShowGameOverOverlay(true); return 0;
-          }
-          return time - 1;
+        setBlackTime((t) => {
+          if (t <= 1) { stopTimer(); setGameOverMessage("Time's up — White wins!"); setStatus("Time's up — White wins!"); setIsGameOver(true); setShowGameOverOverlay(true); return 0; }
+          return t - 1;
         });
       }
     }, 1000);
@@ -802,22 +525,21 @@ export default function ChessBoard() {
   useEffect(() => {
     void (async () => {
       try {
-        const h = await authHeaders();
+        const h   = await authHeaders();
         const res = await fetch("/api/board", { headers: h });
         if (!res.ok) throw new Error("Failed");
         const data = await res.json() as MoveResponse;
         applyResponse(data);
+        preMovePositionRef.current = data.fen;
         setBoardError("");
       } catch { setBoardError("Could not connect to game server."); }
     })();
     void fetchAugments();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // FROM FILE 2: Lock board on every 3rd turn for augment draft
+  // Lock board on every 3rd turn for augment draft
   useEffect(() => {
-    if (turnCount > 0 && turnCount % 3 === 0) {
-      setBoardLocked(true);
-    }
+    if (turnCount > 0 && turnCount % 3 === 0) setBoardLocked(true);
   }, [turnCount]);
 
   // -------------------------
@@ -833,32 +555,14 @@ export default function ChessBoard() {
   }
 
   highlightedSquares.forEach(({ square, is_capture, is_teleport }) => {
-    if (is_teleport) {
-      customSquareStyles[square] = {
-        background: "radial-gradient(circle, rgba(236,72,153,0.35) 30%, transparent 70%)",
-        boxShadow: "inset 0 0 0 2px rgba(236,72,153,0.5)",
-      };
-    } else if (is_capture) {
-      customSquareStyles[square] = {
-        background: "radial-gradient(circle, rgba(239,68,68,0.4) 30%, transparent 70%)",
-        boxShadow: "inset 0 0 0 3px rgba(239,68,68,0.65)",
-      };
-    } else {
-      customSquareStyles[square] = {
-        background: "radial-gradient(circle, rgba(74,222,128,0.5) 22%, transparent 26%)",
-      };
-    }
+    if (is_teleport)      customSquareStyles[square] = { background: "radial-gradient(circle, rgba(236,72,153,0.35) 30%, transparent 70%)", boxShadow: "inset 0 0 0 2px rgba(236,72,153,0.5)" };
+    else if (is_capture)  customSquareStyles[square] = { background: "radial-gradient(circle, rgba(239,68,68,0.4) 30%, transparent 70%)", boxShadow: "inset 0 0 0 3px rgba(239,68,68,0.65)" };
+    else                  customSquareStyles[square] = { background: "radial-gradient(circle, rgba(74,222,128,0.5) 22%, transparent 26%)" };
   });
 
   damagedPawns.forEach((sq) => {
     const name = squareIndexToName(sq);
-    if (name) {
-      customSquareStyles[name] = {
-        ...customSquareStyles[name],
-        boxShadow: "inset 0 0 0 3px rgba(251,146,60,0.85)",
-        backgroundColor: "rgba(251,146,60,0.14)",
-      };
-    }
+    if (name) customSquareStyles[name] = { ...customSquareStyles[name], boxShadow: "inset 0 0 0 3px rgba(251,146,60,0.85)", backgroundColor: "rgba(251,146,60,0.14)" };
   });
 
   const blockedStyles: Record<string, React.CSSProperties> = {
@@ -869,10 +573,7 @@ export default function ChessBoard() {
     pawn_shield:                   { boxShadow: "inset 0 0 0 3px rgba(14,165,233,0.8)", backgroundColor: "rgba(14,165,233,0.1)" },
   };
   blockedSquares.forEach(({ square, reason }) => {
-    customSquareStyles[square] = blockedStyles[reason] ?? {
-      boxShadow: "inset 0 0 0 3px rgba(148,163,184,0.6)",
-      backgroundColor: "rgba(148,163,184,0.07)",
-    };
+    customSquareStyles[square] = blockedStyles[reason] ?? { boxShadow: "inset 0 0 0 3px rgba(148,163,184,0.6)", backgroundColor: "rgba(148,163,184,0.07)" };
   });
 
   const isAlert = status.toLowerCase().includes("check") || status.toLowerCase().includes("may move");
@@ -885,13 +586,12 @@ export default function ChessBoard() {
       <style>{STYLES}</style>
       <div className="chess-page">
 
-        {/* FROM FILE 2: Augment draft popup — shown on lock turns */}
+        {/* Augment draft popup — owns collection writes, reports changes up */}
         <AugmentDraftPopup
           turnCount={turnCount}
-          onDraftComplete={() => {
-            void fetchAugments();
-            setBoardLocked(false);
-          }}
+          movedPieceType={lastWhiteMovedPieceType}
+          onDraftComplete={() => { void fetchAugments(); setBoardLocked(false); }}
+          onCollectionChange={setOwnedCollection}
         />
 
         {/* Header */}
@@ -905,11 +605,7 @@ export default function ChessBoard() {
         {/* Difficulty */}
         <div className="difficulty-row">
           {(["easy", "medium", "hard"] as const).map((level) => (
-            <button
-              key={level}
-              className={`diff-btn${difficulty === level ? " active" : ""}`}
-              onClick={() => void changeDifficulty(level)}
-            >
+            <button key={level} className={`diff-btn${difficulty === level ? " active" : ""}`} onClick={() => void changeDifficulty(level)}>
               {level}
             </button>
           ))}
@@ -917,82 +613,41 @@ export default function ChessBoard() {
 
         {/* Main arena */}
         <div className="main-arena">
-
-          {/* Move history */}
           <MoveHistoryPanel history={moveHistory} />
 
-          {/* Board column */}
           <div className="board-column">
-
             {/* Top bar */}
             <div className="board-topbar">
               <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
                 <div className="turn-indicator">
-                  <div
-                    className="turn-pip"
-                    style={{
-                      background: currentTurn === "white"
-                        ? "rgba(245,230,178,0.9)"
-                        : "rgba(30,41,59,0.9)",
-                      border: currentTurn === "white"
-                        ? "1px solid rgba(226,201,126,0.6)"
-                        : "1px solid rgba(148,163,184,0.3)",
-                      boxShadow: currentTurn === "white"
-                        ? "0 0 8px rgba(226,201,126,0.5)"
-                        : "0 0 8px rgba(99,102,241,0.3)",
-                    }}
-                  />
-                  <span className="turn-label">
-                    {currentTurn === "white" ? "White to move" : "Black to move"}
-                  </span>
+                  <div className="turn-pip" style={{
+                    background: currentTurn === "white" ? "rgba(245,230,178,0.9)" : "rgba(30,41,59,0.9)",
+                    border: currentTurn === "white" ? "1px solid rgba(226,201,126,0.6)" : "1px solid rgba(148,163,184,0.3)",
+                    boxShadow: currentTurn === "white" ? "0 0 8px rgba(226,201,126,0.5)" : "0 0 8px rgba(99,102,241,0.3)",
+                  }} />
+                  <span className="turn-label">{currentTurn === "white" ? "White to move" : "Black to move"}</span>
                 </div>
                 <span className={`status-text${isAlert ? " alert" : ""}`}>{status}</span>
                 {(queenTeleportUsed.white || queenTeleportUsed.black) && (
                   <div style={{ display: "flex", gap: "8px", marginTop: "4px" }}>
-                    {queenTeleportUsed.white && (
-                      <span style={{ fontFamily: "'Cinzel', serif", fontSize: "0.62rem", color: "#64748b", padding: "2px 8px", borderRadius: "6px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
-                        ✨ White teleport used
-                      </span>
-                    )}
-                    {queenTeleportUsed.black && (
-                      <span style={{ fontFamily: "'Cinzel', serif", fontSize: "0.62rem", color: "#64748b", padding: "2px 8px", borderRadius: "6px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
-                        ✨ Black teleport used
-                      </span>
-                    )}
+                    {queenTeleportUsed.white && <span style={{ fontFamily: "'Cinzel', serif", fontSize: "0.62rem", color: "#64748b", padding: "2px 8px", borderRadius: "6px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>✨ White teleport used</span>}
+                    {queenTeleportUsed.black && <span style={{ fontFamily: "'Cinzel', serif", fontSize: "0.62rem", color: "#64748b", padding: "2px 8px", borderRadius: "6px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>✨ Black teleport used</span>}
                   </div>
                 )}
               </div>
 
-              {/* Controls */}
               <div className="board-controls">
-                {isGameOver && !showGameOverOverlay && (
-                  <button className="ctrl-btn" onClick={() => setShowGameOverOverlay(true)}>
-                    Result
-                  </button>
-                )}
-                {!isGameOver && (
-                  <button className="ctrl-btn danger" onClick={() => setShowForfeitConfirm(true)}>
-                    Forfeit
-                  </button>
-                )}
-                <button className="ctrl-btn" onClick={() => void resetGameWithTimer()}>
-                  🔄 Reset
-                </button>
-                <button className="ctrl-btn" onClick={() => navigate("/menu")}>
-                  ← Menu
-                </button>
+                {isGameOver && !showGameOverOverlay && <button className="ctrl-btn" onClick={() => setShowGameOverOverlay(true)}>Result</button>}
+                {!isGameOver && <button className="ctrl-btn danger" onClick={() => setShowForfeitConfirm(true)}>Forfeit</button>}
+                <button className="ctrl-btn" onClick={() => void resetGameWithTimer()}>🔄 Reset</button>
+                <button className="ctrl-btn" onClick={() => navigate("/menu")}>← Menu</button>
               </div>
             </div>
 
             {/* Timer mode selector */}
             <div className="timer-toggle-row">
               {(["none", "1", "3", "5", "10"] as const).map((mode) => (
-                <button
-                  key={mode}
-                  className={`timer-opt-btn ${timerMode === mode ? "selected" : ""}`}
-                  onClick={() => applyTimerMode(mode)}
-                  type="button"
-                >
+                <button key={mode} className={`timer-opt-btn ${timerMode === mode ? "selected" : ""}`} onClick={() => applyTimerMode(mode)} type="button">
                   {mode === "none" ? "No Timer" : `${mode} Min`}
                 </button>
               ))}
@@ -1027,14 +682,12 @@ export default function ChessBoard() {
                 id="main-board"
               />
 
-              {/* FROM FILE 2: Dim overlay when board is locked for draft */}
               {boardLocked && !isGameOver && (
                 <div className="board-lock-dim">
                   <span className="board-lock-label">⚔ Augment Draft</span>
                 </div>
               )}
 
-              {/* Game over overlay */}
               {isGameOver && showGameOverOverlay && (
                 <div className="board-overlay overlay-gameover">
                   <div className="overlay-title">{gameOverMessage}</div>
@@ -1047,7 +700,6 @@ export default function ChessBoard() {
                 </div>
               )}
 
-              {/* Forfeit confirm */}
               {showForfeitConfirm && (
                 <div className="board-overlay overlay-forfeit">
                   <div className="overlay-title" style={{ fontSize: "1.5rem" }}>Forfeit Match?</div>
@@ -1079,9 +731,10 @@ export default function ChessBoard() {
             </div>
           </div>
 
-          {/* Augment panel */}
+          {/* Augment panel — reads collection, dev toggles */}
           <AugmentPanel
             activeAugments={activeAugments}
+            ownedCollection={ownedCollection}
             onToggleAugment={toggleAugment}
             devMode={true}
           />
@@ -1089,15 +742,4 @@ export default function ChessBoard() {
       </div>
     </>
   );
-}
-
-// -------------------------
-// Utility
-// -------------------------
-function squareIndexToName(index: number): string | null {
-  const files = ["a","b","c","d","e","f","g","h"];
-  const file = index % 8;
-  const rank = Math.floor(index / 8);
-  if (file < 0 || file > 7 || rank < 0 || rank > 7) return null;
-  return `${files[file]}${rank + 1}`;
 }
