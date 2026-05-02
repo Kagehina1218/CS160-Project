@@ -123,14 +123,12 @@ async function apiEnableAugment(key: string) {
   const res = await fetch("/api/augments");
   const data = await res.json();
   const currentWhite: Record<string, boolean> = data.active_augments?.white ?? {};
-  for (const [aug, isOn] of Object.entries(currentWhite)) {
-    if (isOn) {
-      await fetch("/api/augments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ side: "white", augment: aug }),
-      });
-    }
+  async function apiEnableAugment(key: string) {
+    await fetch("/api/augments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ side: "white", augment: key }),
+    });
   }
   await fetch("/api/augments", {
     method: "POST",
@@ -227,7 +225,7 @@ export default function AugmentDraftPopup({
 
   // ── Open draft every 3 turns ──────────────────────────────────────────────
   useEffect(() => {
-    if (turnCount <= 0 || turnCount % 3 !== 0) return;
+    if (turnCount <= 0 || turnCount % 6 !== 0) return;
 
     // Read current collection synchronously via functional update pattern
     setOwnedCollection((prev) => {

@@ -260,6 +260,7 @@ export default function ChessBoard() {
   const [damagedPawns, setDamagedPawns]             = useState<number[]>([]);
   const [queenTeleportUsed, setQueenTeleportUsed]   = useState<{ white: boolean; black: boolean }>({ white: false, black: false });
   const [boardLocked, setBoardLocked]               = useState<boolean>(false);
+  const [gameResetKey, setGameResetKey] = useState(0);
 
   /**
    * The full augment collection — kept here so both AugmentDraftPopup
@@ -391,8 +392,9 @@ export default function ChessBoard() {
     try {
       const h   = await authHeaders();
       const res = await fetch("/api/reset", { method: "POST", headers: h });
-      const data = await res.json() as { fen: string };
+      const data = await res.json() as { fen: string; active_augments?: SideAugments };
       setPosition(data.fen);
+      setActiveAugments(data.active_augments ?? { white: {}, black: {} });
       preMovePositionRef.current = data.fen;
       setStatus(""); setIsGameOver(false);
       setGameOverMessage(""); setShowGameOverOverlay(false);
@@ -403,6 +405,7 @@ export default function ChessBoard() {
       setLastWhiteMovedPieceType(null);
       setOwnedCollection([]);   // ← reset collection on new game
       clearHighlights();
+      setGameResetKey((k) => k + 1);
       void fetchAugments();
     } catch (e) { console.error(e); }
   }, [authHeaders, clearHighlights, fetchAugments]);
@@ -424,7 +427,9 @@ export default function ChessBoard() {
       setBoardLocked(false);
       setLastWhiteMovedPieceType(null);
       setOwnedCollection([]);   // ← reset collection on difficulty change
+      setGameResetKey((k) => k + 1);
       clearHighlights();
+      void fetchAugments();
     } catch (e) { console.error(e); }
   }, [authHeaders, clearHighlights]);
 
@@ -545,7 +550,7 @@ export default function ChessBoard() {
 
   // Lock board on every 3rd turn for augment draft
   useEffect(() => {
-    if (turnCount > 0 && turnCount % 3 === 0) setBoardLocked(true);
+    if (turnCount > 0 && turnCount % 6 === 0) setBoardLocked(true);
   }, [turnCount]);
 
   // -------------------------
@@ -594,6 +599,7 @@ export default function ChessBoard() {
 
         {/* Augment draft popup — owns collection writes, reports changes up */}
         <AugmentDraftPopup
+          key={gameResetKey}
           turnCount={turnCount}
           movedPieceType={lastWhiteMovedPieceType}
           onDraftComplete={() => { void fetchAugments(); setBoardLocked(false); }}

@@ -826,7 +826,11 @@ def reset():
     global _game_already_saved
     full_reset()
     _game_already_saved = False
-    return jsonify({"fen": board.fen(), "difficulty": game_difficulty})
+    return jsonify({
+    "fen": board.fen(),
+    "difficulty": game_difficulty,
+    "active_augments": active_augments,
+})
 
 
 # ---------------------------------------------------------------------------

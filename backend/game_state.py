@@ -132,6 +132,11 @@ def use_queen_teleport(side: str):
 def has_queen_teleport(side: str) -> bool:
     return not queen_teleport_used[side]
 
+def reset_active_augments():
+    for side in active_augments:
+        for augment in active_augments[side]:
+            active_augments[side][augment] = False
+
 def full_reset():
     """Reset all game state for a new game."""
     global damaged_pawns
@@ -145,6 +150,7 @@ def full_reset():
     clear_pawn_protection("black")
     damaged_pawns = {}
     reset_queen_teleport()
+    reset_active_augments()
 
 # ---------------------------------------------------------------------------
 # Response builder
